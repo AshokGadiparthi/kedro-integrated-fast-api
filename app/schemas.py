@@ -138,7 +138,7 @@ class WorkspaceCreate(BaseModel):
         ...,
         min_length=1,
         max_length=100,
-        regex="^[a-z0-9-]+$",
+        pattern="^[a-z0-9-]+$",
         description="URL-friendly slug (lowercase, hyphens only)"
     )
     
