@@ -17,7 +17,7 @@ required_files = [
     "app/core/database.py",
     "app/core/auth.py",
     "app/models/models.py",
-    "app/models/data_management.py",
+    "app/models/__init__.py",
     "app/api/auth.py",
     "app/api/workspaces.py",
     "app/api/projects.py",
@@ -48,11 +48,8 @@ try:
     from app.core.database import engine, Base
     print("  ✅ Database imports")
     
-    from app.models.models import User, Workspace, Project, Model, Activity
-    print("  ✅ Phase 0-1 models")
-    
-    from app.models.data_management import Datasource, Dataset, DataProfile
-    print("  ✅ Phase 3 data management models")
+    from app.models.models import User, Workspace, Project, Datasource, Dataset, Model, Activity
+    print("  ✅ All models imported")
     
     print("\n✅ All imports successful!")
     

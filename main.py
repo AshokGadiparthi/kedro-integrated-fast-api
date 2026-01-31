@@ -38,17 +38,12 @@ try:
     from app.core.database import engine, Base
     print("  ✅ Database engine imported")
     
-    # Step 2: Import Phase 0-1 models
-    print("  → Importing Phase 0-1 models...")
+    # Step 2: Import all models (Phase 0-3)
+    print("  → Importing models (Phase 0-3)...")
     from app.models.models import User, Workspace, Project, Datasource, Dataset, Model, Activity
-    print("  ✅ Phase 0-1 models imported")
+    print("  ✅ All models imported and registered")
     
-    # Step 3: Import Phase 3 data management models
-    print("  → Importing Phase 3 data management models...")
-    from app.models.data_management import Datasource as DatasourceV2, Dataset as DatasetV2, DataProfile
-    print("  ✅ Data management models imported")
-    
-    # Step 4: Create all tables
+    # Step 3: Create all tables
     print("  → Creating database tables...")
     Base.metadata.create_all(bind=engine)
     print("  ✅ All tables created")
@@ -57,7 +52,7 @@ try:
     print("📊 Tables created:")
     print("   - Phase 0: users, workspaces")
     print("   - Phase 1: projects")
-    print("   - Phase 3: datasources, datasets, data_profiles, models, activities")
+    print("   - Phase 2-3: datasources, datasets, models, activities")
     print("=" * 70 + "\n")
     
     logger.info("✅ Database initialization complete!")
@@ -138,7 +133,7 @@ try:
     app.include_router(activities_router, prefix="/api/activities", tags=["Activities"])
     logger.info("✅ Activities routes")
 
-    # Datasources & Datasets (NEW)
+    # Datasources & Datasets (Phase 3)
     from app.api.datasources import router as datasources_router
     app.include_router(datasources_router, prefix="/api/datasources", tags=["Datasources"])
     logger.info("✅ Datasources routes")
