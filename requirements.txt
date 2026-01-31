@@ -1,5 +1,5 @@
-# ML Platform - PHASE 0 Requirements
-# ===================================
+# ML Platform - PHASE 0 + PHASE 1 + PHASE 2 Requirements
+# ========================================================
 
 # Web Framework
 fastapi==0.104.1
@@ -16,6 +16,9 @@ sqlalchemy==2.0.23
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
 bcrypt==4.1.1
+
+# File Upload Support
+python-multipart==0.0.6
 
 # HTTP Client (for testing)
 httpx==0.25.2

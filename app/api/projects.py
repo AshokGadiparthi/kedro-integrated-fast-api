@@ -528,3 +528,53 @@ def delete_project(
     db.commit()
     
     logger.info(f"✅ Project deleted: {project.name}")
+
+
+# ============================================================================
+# GET PROJECT STATISTICS (PLACEHOLDER - PHASE 3)
+# ============================================================================
+
+@router.get(
+    "/{project_id}/stats",
+    summary="Get project statistics",
+    description="Get statistics for a project"
+)
+def get_project_stats(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get project statistics (Phase 3)
+    
+    Coming soon!
+    """
+    
+    # Get project
+    project = db.query(Project).filter(Project.id == project_id).first()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Verify access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == project.workspace_id,
+        Workspace.owner_id == current_user.id
+    ).first()
+    
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Return mock statistics (Phase 3 will implement properly)
+    return {
+        "project_id": project_id,
+        "models_trained": 0,
+        "total_accuracy": 0.0,
+        "message": "Statistics coming in Phase 3"
+    }

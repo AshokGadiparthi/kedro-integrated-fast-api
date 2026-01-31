@@ -100,6 +100,9 @@ def init_db():
     Run this once:
     $ python -c "from app.core.database import init_db; init_db()"
     """
+    # IMPORTANT: Import models so they register with Base
+    from app.models.models import User, Workspace, Project, Datasource, Dataset
+    
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
     logger.info("✅ Database tables created successfully!")
@@ -110,6 +113,9 @@ def drop_db():
     
     DANGEROUS - Only use in development!
     """
+    # IMPORTANT: Import models so they register with Base
+    from app.models.models import User, Workspace, Project, Datasource, Dataset
+    
     logger.warning("⚠️  Dropping all database tables...")
     Base.metadata.drop_all(bind=engine)
     logger.info("✅ Database dropped!")
