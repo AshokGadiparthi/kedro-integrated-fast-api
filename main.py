@@ -1,12 +1,14 @@
 """
 ML Platform - FastAPI Entry Point
 ===================================
-PHASE 0: Basic Authentication & Workspace Management
+PHASE 0-3: Complete ML Platform with Models & Activities
+
+Includes automatic database bootstrap on startup.
 
 Start with:
 $ python main.py
 
-Then visit: http://127.0.0.1:8000/docs
+Then visit: http://192.168.1.147:8000/docs
 """
 
 from fastapi import FastAPI, APIRouter
@@ -22,11 +24,34 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# BOOTSTRAP - Initialize database automatically on startup
+# ============================================================================
+
+logger.info("🚀 Starting ML Platform API...")
+logger.info("🔄 Initializing database...")
+
+try:
+    from app.core.database import engine, Base
+    # Import all models to register them with SQLAlchemy
+    from app.models.models import User, Workspace, Project, Datasource, Dataset, Model, Activity
+    
+    # Create all tables
+    Base.metadata.create_all(bind=engine)
+    
+    logger.info("✅ Database initialized successfully!")
+    logger.info("📊 Tables created: users, workspaces, projects, datasources, datasets, models, activities")
+    
+except Exception as e:
+    logger.error(f"❌ FATAL: Database initialization failed: {e}")
+    logger.error("Cannot start server without database!")
+    raise
+
 # Create FastAPI app
 app = FastAPI(
-    title="ML Platform API - Phase 0",
-    description="Baby steps approach - Building feature by feature",
-    version="0.1.0",
+    title="ML Platform API - Phase 0-3",
+    description="Complete ML Platform with Models & Activities - Automatic Bootstrap",
+    version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )

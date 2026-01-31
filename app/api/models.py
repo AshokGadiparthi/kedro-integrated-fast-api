@@ -399,4 +399,68 @@ def delete_model(
     db.delete(model)
     db.commit()
     
-    logger.info(f"✅ Model deleted: {model.name}")
+    # Delete model
+    db.delete(model)
+    db.commit()
+    
+
+
+
+# ============================================================================
+# FRONTEND COMPATIBILITY ALIASES
+# ============================================================================
+
+@router.get(
+    "/recent",
+    response_model=List[ModelResponse],
+    summary="Get recent models (alias)",
+    description="Get recently trained models - alias for /api/models/{project_id}"
+)
+def get_recent_models_alias(
+    project_id: str = None,
+    limit: int = 5,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Frontend compatibility route
+    Supports: GET /api/models/recent?projectId=...
+    
+    Also supports: GET /api/models/{project_id}
+    """
+    
+    if not project_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="projectId is required"
+        )
+    
+    logger.info(f"📋 Listing recent models for project: {project_id}")
+    
+    # Verify project exists and belongs to user
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    workspace = db.query(Workspace).filter(
+        Workspace.id == project.workspace_id,
+        Workspace.owner_id == current_user.id
+    ).first()
+    
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Get recent models
+    models = db.query(Model).filter(
+        Model.project_id == project_id
+    ).order_by(Model.created_at.desc()).limit(limit).all()
+    
+    logger.info(f"✅ Found {len(models)} recent models")
+    
+    return models

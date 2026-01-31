@@ -296,4 +296,4 @@ def get_recent_activities(
     
     logger.info(f"✅ Found {len(activities)} recent activities")
     
-    return activities
+

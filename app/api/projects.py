@@ -523,16 +523,7 @@ def delete_project(
             detail="Project not found"
         )
     
-    # Delete project
-    db.delete(project)
-    db.commit()
-    
-    logger.info(f"✅ Project deleted: {project.name}")
 
-
-# ============================================================================
-# GET PROJECT STATISTICS
-# ============================================================================
 
 @router.get(
     "/stats/{project_id}",
