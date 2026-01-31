@@ -393,21 +393,18 @@ def get_dataset_stats(
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
     
-    # Return mock statistics
+    # Return only real database data (no defaults/mocks)
     stats = {
         "dataset_id": dataset_id,
         "name": dataset.name,
-        "row_count": dataset.row_count or 10000,
-        "column_count": dataset.column_count or 15,
-        "missing_values": dataset.missing_values_count or 42,
-        "duplicate_rows": dataset.duplicate_rows_count or 5,
-        "memory_usage": "15.2 MB",
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "missing_values_count": dataset.missing_values_count,
+        "duplicate_rows_count": dataset.duplicate_rows_count,
         "is_processed": dataset.is_processed,
-        "columns_info": dataset.columns_info or {
-            "name": {"type": "string", "unique": 9950},
-            "age": {"type": "integer", "min": 18, "max": 75, "mean": 45.3},
-            "email": {"type": "string", "unique": 10000}
-        }
+        "columns_info": dataset.columns_info,
+        "created_at": dataset.created_at.isoformat() if dataset.created_at else None,
+        "updated_at": dataset.updated_at.isoformat() if dataset.updated_at else None
     }
     
     logger.info(f"✅ Statistics retrieved")

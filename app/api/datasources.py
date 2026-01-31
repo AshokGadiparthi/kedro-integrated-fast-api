@@ -473,22 +473,12 @@ def get_preview(
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found")
     
-    # For now, return mock preview data
-    # In production, you would read the actual file/database
-    preview_data = {
-        "data": [
-            ["name", "age", "email", "status"],
-            ["John Doe", 28, "john@example.com", "active"],
-            ["Jane Smith", 34, "jane@example.com", "active"],
-            ["Bob Johnson", 45, "bob@example.com", "inactive"],
-        ],
-        "row_count": 3,
-        "column_count": 4,
-        "message": "Preview of first 3 rows"
-    }
-    
-    logger.info(f"✅ Preview retrieved")
-    return preview_data
+    # Preview functionality requires actual data source implementation
+    # This will be fully implemented in Phase 3
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Data preview functionality coming in Phase 3: Full Data Integration"
+    )
 
 
 # ============================================================================

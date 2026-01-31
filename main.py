@@ -73,7 +73,7 @@ async def health_check():
 # ============================================================================
 
 # Import route modules
-from app.api import auth, workspaces, projects, datasources, datasets, placeholder
+from app.api import auth, workspaces, projects, datasources, datasets
 
 # Register routers
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
@@ -81,7 +81,6 @@ app.include_router(workspaces.router, prefix="/api/workspaces", tags=["Workspace
 app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(datasources.router, prefix="/api/datasources", tags=["Datasources"])
 app.include_router(datasets.router, prefix="/api/datasets", tags=["Datasets"])
-app.include_router(placeholder.router, tags=["Placeholder - Phase 3"])
 
 # ============================================================================
 # ERROR HANDLERS
