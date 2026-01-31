@@ -187,13 +187,110 @@ class Dataset(Base):
 
 
 # ============================================================================
-# FUTURE MODELS (Placeholders)
+# MODEL MODEL - PHASE 3
 # ============================================================================
 
-# Phase 3: EDA & Features
-# class EDAReport(Base):
-#     __tablename__ = "eda_reports"
-# 
+class Model(Base):
+    """
+    Model model - represents a trained ML model
+    
+    Fields:
+    - id: Unique identifier
+    - project_id: Foreign key to Project
+    - name: Model name
+    - algorithm: Algorithm used (Random Forest, Neural Network, etc)
+    - accuracy: Model accuracy (0-1)
+    - precision: Precision score
+    - recall: Recall score
+    - f1_score: F1 score
+    - status: Status (Training, Trained, Failed)
+    - training_duration_seconds: Training time
+    - created_at: When created
+    - updated_at: When last modified
+    - project: Relationship back to Project
+    
+    Database table: models
+    """
+    
+    __tablename__ = "models"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    name = Column(String(255), nullable=False)
+    algorithm = Column(String(100), nullable=False)  # Random Forest, Neural Network, etc
+    
+    # Performance metrics
+    accuracy = Column(Float, nullable=True)
+    precision = Column(Float, nullable=True)
+    recall = Column(Float, nullable=True)
+    f1_score = Column(Float, nullable=True)
+    
+    # Status and timing
+    status = Column(String(50), default="Training", nullable=False)  # Training, Trained, Failed
+    training_duration_seconds = Column(Integer, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    project = relationship("Project", lazy="select")
+    
+    def __repr__(self):
+        return f"<Model {self.name} ({self.algorithm}) - {self.status}>"
+
+
+# ============================================================================
+# ACTIVITY MODEL - PHASE 3
+# ============================================================================
+
+class Activity(Base):
+    """
+    Activity model - tracks actions in the system
+    
+    Records all important actions:
+    - Project created, updated, deleted
+    - Dataset uploaded, processed
+    - Model trained, evaluated
+    - Feature engineered
+    
+    Fields:
+    - id: Unique identifier
+    - project_id: Foreign key to Project
+    - action: Action type (model_trained, dataset_uploaded, etc)
+    - target_type: What was acted on (project, dataset, model, feature)
+    - target_id: ID of the target
+    - description: Human-readable description
+    - created_at: When it happened
+    - project: Relationship back to Project
+    
+    Database table: activities
+    """
+    
+    __tablename__ = "activities"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    action = Column(String(50), nullable=False)  # model_trained, dataset_uploaded, etc
+    target_type = Column(String(50), nullable=False)  # project, dataset, model, feature
+    target_id = Column(String(36), nullable=True)
+    description = Column(Text, nullable=True)
+    
+    # Timestamp
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    project = relationship("Project", lazy="select")
+    
+    def __repr__(self):
+        return f"<Activity {self.action} on {self.target_type}>"
+
+
+# ============================================================================
+# FUTURE MODELS
+# ============================================================================
+
+# Phase 3: More features
 # class Feature(Base):
 #     __tablename__ = "features"
 

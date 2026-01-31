@@ -529,3 +529,110 @@ def delete_project(
     
     logger.info(f"✅ Project deleted: {project.name}")
 
+
+# ============================================================================
+# GET PROJECT STATISTICS
+# ============================================================================
+
+@router.get(
+    "/stats/{project_id}",
+    summary="Get project statistics",
+    description="Get statistics and metrics for a project"
+)
+def get_project_stats(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get project statistics
+    
+    **Headers:**
+    ```
+    Authorization: Bearer <access_token>
+    ```
+    
+    **Path Parameters:**
+    - project_id: The UUID of the project
+    
+    **Response (200 OK):**
+    ```json
+    {
+      "project_id": "project-uuid",
+      "models": 5,
+      "models_trained": 3,
+      "datasets": 2,
+      "avg_accuracy": 0.92,
+      "best_accuracy": 0.95,
+      "status": "Active"
+    }
+    ```
+    """
+    
+    logger.info(f"📊 Getting statistics for project: {project_id}")
+    
+    # Get project
+    project = db.query(Project).filter(Project.id == project_id).first()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Verify user has access
+    workspace = db.query(Workspace).filter(
+        Workspace.id == project.workspace_id,
+        Workspace.owner_id == current_user.id
+    ).first()
+    
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Get statistics
+    from app.models.models import Model, Dataset
+    
+    # Count models
+    total_models = db.query(Model).filter(Model.project_id == project_id).count()
+    trained_models = db.query(Model).filter(
+        Model.project_id == project_id,
+        Model.status == "Trained"
+    ).count()
+    
+    # Count datasets
+    total_datasets = db.query(Dataset).filter(Dataset.project_id == project_id).count()
+    
+    # Get accuracy metrics
+    trained = db.query(Model).filter(
+        Model.project_id == project_id,
+        Model.status == "Trained",
+        Model.accuracy != None
+    ).all()
+    
+    avg_accuracy = 0.0
+    best_accuracy = 0.0
+    
+    if trained:
+        accuracies = [m.accuracy for m in trained if m.accuracy is not None]
+        if accuracies:
+            avg_accuracy = sum(accuracies) / len(accuracies)
+            best_accuracy = max(accuracies)
+    
+    stats = {
+        "project_id": project_id,
+        "project_name": project.name,
+        "models": total_models,
+        "models_trained": trained_models,
+        "datasets": total_datasets,
+        "avg_accuracy": round(avg_accuracy, 4),
+        "best_accuracy": round(best_accuracy, 4),
+        "status": project.status,
+        "created_at": project.created_at.isoformat() if project.created_at else None
+    }
+    
+    logger.info(f"✅ Statistics retrieved")
+    return stats
+

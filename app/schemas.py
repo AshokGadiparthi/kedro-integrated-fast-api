@@ -443,6 +443,118 @@ class DatasetResponse(BaseModel):
 
 
 # ============================================================================
+# MODEL SCHEMAS - PHASE 3
+# ============================================================================
+
+class ModelCreate(BaseModel):
+    """Create model request"""
+    
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Model name"
+    )
+    algorithm: str = Field(
+        ...,
+        description="Algorithm used"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "Customer Churn v1",
+                "algorithm": "Random Forest"
+            }
+        }
+
+
+class ModelResponse(BaseModel):
+    """Model response"""
+    
+    id: str = Field(..., description="Model ID")
+    project_id: str = Field(..., description="Project ID")
+    name: str = Field(..., description="Model name")
+    algorithm: str = Field(..., description="Algorithm")
+    accuracy: Optional[float] = Field(None, description="Accuracy score")
+    precision: Optional[float] = Field(None, description="Precision score")
+    recall: Optional[float] = Field(None, description="Recall score")
+    f1_score: Optional[float] = Field(None, description="F1 score")
+    status: str = Field(..., description="Model status")
+    training_duration_seconds: Optional[int] = Field(None, description="Training time")
+    created_at: datetime = Field(..., description="Creation date")
+    updated_at: datetime = Field(..., description="Last update date")
+    
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "model-uuid",
+                "project_id": "project-uuid",
+                "name": "Customer Churn v1",
+                "algorithm": "Random Forest",
+                "accuracy": 0.92,
+                "precision": 0.90,
+                "recall": 0.94,
+                "f1_score": 0.92,
+                "status": "Trained",
+                "training_duration_seconds": 3600,
+                "created_at": "2024-01-31T12:00:00",
+                "updated_at": "2024-01-31T12:00:00"
+            }
+        }
+
+
+# ============================================================================
+# ACTIVITY SCHEMAS - PHASE 3
+# ============================================================================
+
+class ActivityCreate(BaseModel):
+    """Create activity request"""
+    
+    action: str = Field(..., description="Action type")
+    target_type: str = Field(..., description="Target type (project, dataset, model, etc)")
+    target_id: Optional[str] = Field(None, description="Target ID")
+    description: Optional[str] = Field(None, description="Description")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "action": "model_trained",
+                "target_type": "model",
+                "target_id": "model-uuid",
+                "description": "Model trained successfully"
+            }
+        }
+
+
+class ActivityResponse(BaseModel):
+    """Activity response"""
+    
+    id: str = Field(..., description="Activity ID")
+    project_id: str = Field(..., description="Project ID")
+    action: str = Field(..., description="Action")
+    target_type: str = Field(..., description="Target type")
+    target_id: Optional[str] = Field(None, description="Target ID")
+    description: Optional[str] = Field(None, description="Description")
+    created_at: datetime = Field(..., description="When it happened")
+    
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "activity-uuid",
+                "project_id": "project-uuid",
+                "action": "model_trained",
+                "target_type": "model",
+                "target_id": "model-uuid",
+                "description": "Model trained successfully",
+                "created_at": "2024-01-31T12:00:00"
+            }
+        }
+
+
+# ============================================================================
 # ERROR SCHEMAS
 # ============================================================================
 
