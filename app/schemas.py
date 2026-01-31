@@ -537,7 +537,7 @@ class ActivityResponse(BaseModel):
     target_type: str = Field(..., description="Target type")
     target_id: Optional[str] = Field(None, description="Target ID")
     description: Optional[str] = Field(None, description="Description")
-    created_at: datetime = Field(..., description="When it happened")
+    created_at: str = Field(..., description="When it happened (ISO format)")
     
     class Config:
         from_attributes = True

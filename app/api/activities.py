@@ -61,13 +61,7 @@ def get_current_user(
 # LOG ACTIVITY
 # ============================================================================
 
-@router.post(
-    "/{project_id}",
-    response_model=ActivityResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Log activity",
-    description="Log an activity/action in a project"
-)
+
 def log_activity(
     project_id: str,
     activity_data: ActivityCreate,
@@ -146,7 +140,15 @@ def log_activity(
     
     logger.info(f"✅ Activity logged: {activity_data.action}")
     
-    return db_activity
+    return {
+        "id": db_activity.id,
+        "project_id": db_activity.project_id,
+        "action": db_activity.action,
+        "target_type": db_activity.target_type,
+        "target_id": db_activity.target_id,
+        "description": db_activity.description,
+        "created_at": db_activity.created_at.isoformat()
+    }
 
 
 # ============================================================================
@@ -155,7 +157,6 @@ def log_activity(
 
 @router.get(
     "/{project_id}",
-    response_model=List[ActivityResponse],
     summary="List activities",
     description="Get all activities in a project"
 )
@@ -164,32 +165,7 @@ def list_activities(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    List all activities in project
-    
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - project_id: The UUID of the project
-    
-    **Response (200 OK):**
-    ```json
-    [
-      {
-        "id": "activity-uuid-1",
-        "project_id": "project-uuid",
-        "action": "model_trained",
-        "target_type": "model",
-        "target_id": "model-uuid",
-        "description": "Model trained successfully",
-        "created_at": "2024-01-31T17:00:00"
-      }
-    ]
-    ```
-    """
+    """List all activities in project"""
     
     logger.info(f"📋 Listing activities for project: {project_id}")
     
@@ -219,7 +195,19 @@ def list_activities(
     
     logger.info(f"✅ Found {len(activities)} activities")
     
-    return activities
+    # Return as JSON with isoformat dates
+    return [
+        {
+            "id": a.id,
+            "project_id": a.project_id,
+            "action": a.action,
+            "target_type": a.target_type,
+            "target_id": a.target_id,
+            "description": a.description,
+            "created_at": a.created_at.isoformat() if a.created_at else None
+        }
+        for a in activities
+    ]
 
 
 # ============================================================================
@@ -228,7 +216,6 @@ def list_activities(
 
 @router.get(
     "/recent/{project_id}",
-    response_model=List[ActivityResponse],
     summary="Get recent activities",
     description="Get latest activities in a project"
 )
@@ -238,35 +225,7 @@ def get_recent_activities(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Get recent activities (latest first)
-    
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - project_id: The UUID of the project
-    
-    **Query Parameters:**
-    - limit: Number of activities to return (default: 10)
-    
-    **Response (200 OK):**
-    ```json
-    [
-      {
-        "id": "activity-uuid-1",
-        "project_id": "project-uuid",
-        "action": "model_trained",
-        "target_type": "model",
-        "target_id": "model-uuid",
-        "description": "Model trained successfully",
-        "created_at": "2024-01-31T17:00:00"
-      }
-    ]
-    ```
-    """
+    """Get recent activities (latest first)"""
     
     logger.info(f"⏱️  Getting recent activities for project: {project_id}")
     
@@ -296,4 +255,16 @@ def get_recent_activities(
     
     logger.info(f"✅ Found {len(activities)} recent activities")
     
-
+    # Return as JSON with isoformat dates
+    return [
+        {
+            "id": a.id,
+            "project_id": a.project_id,
+            "action": a.action,
+            "target_type": a.target_type,
+            "target_id": a.target_id,
+            "description": a.description,
+            "created_at": a.created_at.isoformat() if a.created_at else None
+        }
+        for a in activities
+    ]
