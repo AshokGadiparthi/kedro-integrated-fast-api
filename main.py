@@ -28,23 +28,45 @@ logger = logging.getLogger(__name__)
 # BOOTSTRAP - Initialize database automatically on startup
 # ============================================================================
 
-logger.info("🚀 Starting ML Platform API...")
-logger.info("🔄 Initializing database...")
+print("=" * 70)
+print("🚀 Starting ML Platform API...")
+print("🔄 Initializing database...")
+print("=" * 70)
 
 try:
+    # Step 1: Import database engine and Base
+    print("  → Importing database engine...")
     from app.core.database import engine, Base
-    # Import all models to register them with SQLAlchemy
+    print("  ✅ Database engine imported")
+    
+    # Step 2: Import all models to register them with SQLAlchemy
+    print("  → Importing models (User, Workspace, Project, Datasource, Dataset, Model, Activity)...")
     from app.models.models import User, Workspace, Project, Datasource, Dataset, Model, Activity
+    print("  ✅ All models imported and registered")
     
-    # Create all tables
+    # Step 3: Create all tables
+    print("  → Creating database tables...")
     Base.metadata.create_all(bind=engine)
+    print("  ✅ All tables created")
     
-    logger.info("✅ Database initialized successfully!")
-    logger.info("📊 Tables created: users, workspaces, projects, datasources, datasets, models, activities")
+    print("\n✅ Database initialization SUCCESSFUL!")
+    print("📊 Tables created: users, workspaces, projects, datasources, datasets, models, activities")
+    print("=" * 70 + "\n")
+    
+    logger.info("✅ Database initialization complete!")
+    
+except ImportError as e:
+    print(f"\n❌ IMPORT ERROR: {e}")
+    print("Check your file structure and imports!")
+    print("=" * 70)
+    logger.error(f"Import failed: {e}")
+    raise
     
 except Exception as e:
-    logger.error(f"❌ FATAL: Database initialization failed: {e}")
-    logger.error("Cannot start server without database!")
+    print(f"\n❌ DATABASE ERROR: {e}")
+    print(f"Error type: {type(e).__name__}")
+    print("=" * 70)
+    logger.error(f"Database initialization failed: {e}")
     raise
 
 # Create FastAPI app
