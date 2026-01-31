@@ -211,6 +211,238 @@ class WorkspaceListResponse(BaseModel):
 
 
 # ============================================================================
+# PROJECT SCHEMAS - PHASE 1
+# ============================================================================
+
+class ProjectCreate(BaseModel):
+    """Create project request"""
+    
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Project name"
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Project description"
+    )
+    problem_type: str = Field(
+        default="Classification",
+        description="Type of problem (Classification, Regression, Clustering)"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "Customer Churn Prediction",
+                "description": "Predict which customers will churn",
+                "problem_type": "Classification"
+            }
+        }
+
+
+class ProjectUpdate(BaseModel):
+    """Update project request"""
+    
+    name: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+        description="New project name"
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="New description"
+    )
+    status: Optional[str] = Field(
+        default=None,
+        description="Project status (Active, Completed, Archived)"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "Updated Project Name",
+                "description": "Updated description",
+                "status": "Active"
+            }
+        }
+
+
+class ProjectResponse(BaseModel):
+    """Project response (sent to frontend)"""
+    
+    id: str = Field(..., description="Project ID")
+    workspace_id: str = Field(..., description="Workspace ID")
+    name: str = Field(..., description="Project name")
+    description: Optional[str] = Field(None, description="Description")
+    problem_type: str = Field(..., description="Type of ML problem")
+    status: str = Field(..., description="Project status")
+    created_at: datetime = Field(..., description="Creation date")
+    updated_at: datetime = Field(..., description="Last update date")
+    
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "550e8400-e29b-41d4-a716-446655440002",
+                "workspace_id": "550e8400-e29b-41d4-a716-446655440000",
+                "name": "Customer Churn Prediction",
+                "description": "Predict which customers will churn",
+                "problem_type": "Classification",
+                "status": "Active",
+                "created_at": "2024-01-31T11:00:00",
+                "updated_at": "2024-01-31T11:00:00"
+            }
+        }
+
+
+class ProjectListResponse(BaseModel):
+    """Response for listing projects"""
+    
+    count: int = Field(..., description="Number of projects")
+    projects: List[ProjectResponse] = Field(..., description="List of projects")
+
+
+# ============================================================================
+# DATASOURCE SCHEMAS - PHASE 2
+# ============================================================================
+
+class DatasourceCreate(BaseModel):
+    """Create datasource request"""
+    
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Datasource name"
+    )
+    type: str = Field(
+        ...,
+        description="Type: csv, excel, json, parquet, bigquery, snowflake, postgresql, mysql, etc"
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Datasource description"
+    )
+    connection_config: Optional[dict] = Field(
+        default=None,
+        description="Connection details (for database sources)"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "Customer Data",
+                "type": "csv",
+                "description": "Customer information CSV file",
+                "connection_config": None
+            }
+        }
+
+
+class DatasourceResponse(BaseModel):
+    """Datasource response"""
+    
+    id: str = Field(..., description="Datasource ID")
+    project_id: str = Field(..., description="Project ID")
+    name: str = Field(..., description="Datasource name")
+    type: str = Field(..., description="Datasource type")
+    description: Optional[str] = Field(None, description="Description")
+    file_path: Optional[str] = Field(None, description="Path to uploaded file")
+    file_size: Optional[int] = Field(None, description="File size in bytes")
+    is_active: bool = Field(..., description="Is active")
+    is_connected: bool = Field(..., description="Connection test passed")
+    created_at: datetime = Field(..., description="Creation date")
+    updated_at: datetime = Field(..., description="Last update date")
+    
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "550e8400-e29b-41d4-a716-446655440004",
+                "project_id": "550e8400-e29b-41d4-a716-446655440002",
+                "name": "Customer Data",
+                "type": "csv",
+                "description": "Customer information",
+                "file_path": "/uploads/customer_data.csv",
+                "file_size": 1024000,
+                "is_active": True,
+                "is_connected": True,
+                "created_at": "2024-01-31T11:30:00",
+                "updated_at": "2024-01-31T11:30:00"
+            }
+        }
+
+
+class DatasetCreate(BaseModel):
+    """Create dataset request"""
+    
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Dataset name"
+    )
+    datasource_id: str = Field(
+        ...,
+        description="Datasource ID to create dataset from"
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Dataset description"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "Customer Data v1",
+                "datasource_id": "550e8400-e29b-41d4-a716-446655440004",
+                "description": "Processed customer data ready for ML"
+            }
+        }
+
+
+class DatasetResponse(BaseModel):
+    """Dataset response"""
+    
+    id: str = Field(..., description="Dataset ID")
+    project_id: str = Field(..., description="Project ID")
+    datasource_id: Optional[str] = Field(None, description="Source datasource ID")
+    name: str = Field(..., description="Dataset name")
+    description: Optional[str] = Field(None, description="Description")
+    row_count: Optional[int] = Field(None, description="Number of rows")
+    column_count: Optional[int] = Field(None, description="Number of columns")
+    columns_info: Optional[dict] = Field(None, description="Column information")
+    missing_values_count: Optional[int] = Field(None, description="Missing values count")
+    duplicate_rows_count: Optional[int] = Field(None, description="Duplicate rows count")
+    is_processed: bool = Field(..., description="Is processed and ready")
+    created_at: datetime = Field(..., description="Creation date")
+    updated_at: datetime = Field(..., description="Last update date")
+    
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "550e8400-e29b-41d4-a716-446655440005",
+                "project_id": "550e8400-e29b-41d4-a716-446655440002",
+                "datasource_id": "550e8400-e29b-41d4-a716-446655440004",
+                "name": "Customer Data v1",
+                "description": "Processed customer data ready for ML",
+                "row_count": 10000,
+                "column_count": 15,
+                "columns_info": {"name": "text", "age": "integer", "email": "text"},
+                "missing_values_count": 42,
+                "duplicate_rows_count": 5,
+                "is_processed": True,
+                "created_at": "2024-01-31T11:40:00",
+                "updated_at": "2024-01-31T11:40:00"
+            }
+        }
+
+
+# ============================================================================
 # ERROR SCHEMAS
 # ============================================================================
 
