@@ -6,9 +6,9 @@ File upload and dataset management
 ENDPOINTS:
 POST   /api/datasets/{project_id}/upload      Upload file
 GET    /api/datasets/{project_id}             List datasets
-GET    /api/datasets/{dataset_id}             Get details
-GET    /api/datasets/{dataset_id}/profile     Get quality profile
-DELETE /api/datasets/{dataset_id}             Delete dataset
+GET    /api/datasets/details/{id}             Get details
+GET    /api/datasets/{id}/profile             Get quality profile
+DELETE /api/datasets/{id}                     Delete dataset
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Header, File, UploadFile, Form
@@ -20,8 +20,7 @@ import json
 from datetime import datetime
 
 from app.core.database import get_db
-from app.models.models import User, Workspace, Project
-from app.models.data_management import Dataset, DataProfile
+from app.models.models import User, Workspace, Project, Dataset
 from app.core.auth import verify_token, extract_token_from_header
 
 logger = logging.getLogger(__name__)
@@ -87,10 +86,6 @@ async def upload_dataset(
     
     Supports: CSV, JSON, Parquet, Excel, TSV
     Max size: 1GB
-    
-    File is stored as blob in database
-    Schema auto-detected
-    Quality metrics calculated
     """
     
     # Verify project access
@@ -116,7 +111,7 @@ async def upload_dataset(
         # Validate size (1GB max)
         max_size = 1024 * 1024 * 1024
         if file_size > max_size:
-            raise HTTPException(400, f"File too large ({file_size / 1024 / 1024:.1f}MB). Max: 1GB")
+            raise HTTPException(400, f"File too large. Max: 1GB")
         
         logger.info(f"✅ File read: {file_size / 1024:.1f}KB")
         
@@ -127,7 +122,7 @@ async def upload_dataset(
     # Infer schema from file
     try:
         schema, row_count, quality_score = _infer_schema(file_content, file_ext)
-        logger.info(f"✅ Schema inferred: {len(schema)} columns, {row_count} rows, quality: {quality_score}%")
+        logger.info(f"✅ Schema inferred: {len(schema)} columns, {row_count} rows")
         
     except Exception as e:
         logger.warning(f"⚠️  Schema inference failed: {str(e)}")
@@ -147,13 +142,12 @@ async def upload_dataset(
         file_content=file_content,  # ← Store file as blob
         row_count=row_count,
         column_count=len(schema),
-        schema=schema,
+        columns_info=schema,
         schema_inferred=len(schema) > 0,
         schema_confidence=95.0 if schema else 0,
         quality_score=quality_score,
         tags=json.loads(tags) if tags else [],
-        status="ready",
-        created_by=current_user.id
+        status="ready"
     )
     
     db.add(dataset)
@@ -243,11 +237,11 @@ def get_dataset_details(
         "file_size_mb": dataset.file_size_bytes / 1024 / 1024 if dataset.file_size_bytes else 0,
         "row_count": dataset.row_count,
         "column_count": dataset.column_count,
-        "schema": dataset.schema,
+        "schema": dataset.columns_info,
         "quality_score": dataset.quality_score,
         "missing_values_count": dataset.missing_values_count,
         "missing_values_pct": dataset.missing_values_pct,
-        "duplicates_count": dataset.duplicates_count,
+        "duplicates_count": dataset.duplicate_rows_count,
         "tags": dataset.tags,
         "status": dataset.status,
         "version": dataset.version,
@@ -282,13 +276,11 @@ def get_dataset_profile(
         "quality_metrics": {
             "overall_score": dataset.quality_score,
             "completeness": 100 - (dataset.missing_values_pct or 0),
-            "uniqueness": 100 - (dataset.duplicate_rows_pct or 0) if hasattr(dataset, 'duplicate_rows_pct') else 100,
             "missing_values_count": dataset.missing_values_count,
             "missing_values_pct": dataset.missing_values_pct,
-            "duplicates_count": dataset.duplicates_count
+            "duplicates_count": dataset.duplicate_rows_count
         },
-        "schema": dataset.schema,
-        "quality_report": dataset.quality_report,
+        "schema": dataset.columns_info,
         "last_updated": dataset.updated_at.isoformat()
     }
 
@@ -386,5 +378,4 @@ def _infer_schema(file_content: bytes, file_format: str) -> tuple:
     except Exception as e:
         logger.error(f"Schema inference error: {str(e)}")
         raise
-
 
