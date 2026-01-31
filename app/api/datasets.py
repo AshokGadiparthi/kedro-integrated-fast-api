@@ -1,33 +1,34 @@
 """
-Datasets Routes - PHASE 2
-===========================
-Dataset management for ML projects
+Datasets API - Phase 3
+=======================
+File upload and dataset management
 
 ENDPOINTS:
-- POST   /api/datasets/{project_id}           Create dataset from datasource
-- GET    /api/datasets/{project_id}           List project datasets
-- GET    /api/datasets/details/{dataset_id}   Get dataset details
-- DELETE /api/datasets/{dataset_id}           Delete dataset
-- GET    /api/datasets/stats/{dataset_id}     Get dataset statistics
+POST   /api/datasets/{project_id}/upload      Upload file
+GET    /api/datasets/{project_id}             List datasets
+GET    /api/datasets/{dataset_id}             Get details
+GET    /api/datasets/{dataset_id}/profile     Get quality profile
+DELETE /api/datasets/{dataset_id}             Delete dataset
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, File, UploadFile, Form
 from sqlalchemy.orm import Session
-from typing import List
+from typing import Optional
 import logging
+import io
+import json
+from datetime import datetime
 
 from app.core.database import get_db
-from app.models.models import User, Workspace, Project, Datasource, Dataset
-from app.schemas import DatasetCreate, DatasetResponse
+from app.models.models import User, Workspace, Project
+from app.models.data_management import Dataset, DataProfile
 from app.core.auth import verify_token, extract_token_from_header
 
 logger = logging.getLogger(__name__)
-
-# Create router
 router = APIRouter()
 
 # ============================================================================
-# HELPER FUNCTION - Get current user from token
+# HELPER: Get current user
 # ============================================================================
 
 def get_current_user(
@@ -36,443 +37,354 @@ def get_current_user(
 ) -> User:
     """Extract and verify user from Authorization header"""
     token = extract_token_from_header(authorization)
-    
     if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header"
-        )
+        raise HTTPException(status_code=401, detail="Missing authorization")
     
     user_id = verify_token(token)
     if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
+        raise HTTPException(status_code=401, detail="Invalid token")
     
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
-        )
+        raise HTTPException(status_code=401, detail="User not found")
     
     return user
 
 
+def verify_project_access(project_id: str, user: User, db: Session) -> Project:
+    """Verify user has access to project"""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    workspace = db.query(Workspace).filter(
+        Workspace.id == project.workspace_id,
+        Workspace.owner_id == user.id
+    ).first()
+    
+    if not workspace:
+        raise HTTPException(status_code=403, detail="No access to project")
+    
+    return project
+
+
 # ============================================================================
-# CREATE DATASET
+# UPLOAD FILE
 # ============================================================================
 
-@router.post(
-    "/{project_id}",
-    response_model=DatasetResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create dataset",
-    description="Create a new dataset from a datasource"
-)
-def create_dataset(
+@router.post("/{project_id}/upload", status_code=201, summary="Upload dataset")
+async def upload_dataset(
     project_id: str,
-    dataset_data: DatasetCreate,
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    description: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Create a new dataset from a datasource
+    Upload a dataset file
     
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
+    Supports: CSV, JSON, Parquet, Excel, TSV
+    Max size: 1GB
     
-    **Path Parameters:**
-    - project_id: The UUID of the project
-    
-    **Request Body:**
-    ```json
-    {
-      "name": "Customer Data v1",
-      "datasource_id": "datasource-uuid",
-      "description": "Processed customer data"
-    }
-    ```
-    
-    **Response (201 Created):**
-    ```json
-    {
-      "id": "dataset-uuid",
-      "project_id": "project-uuid",
-      "datasource_id": "datasource-uuid",
-      "name": "Customer Data v1",
-      "description": "Processed customer data",
-      "row_count": null,
-      "column_count": null,
-      "is_processed": false,
-      "created_at": "2024-01-31T11:40:00",
-      "updated_at": "2024-01-31T11:40:00"
-    }
-    ```
+    File is stored as blob in database
+    Schema auto-detected
+    Quality metrics calculated
     """
     
-    logger.info(f"🆕 Creating dataset in project: {project_id}")
+    # Verify project access
+    project = verify_project_access(project_id, current_user, db)
     
-    # Verify project exists and belongs to user
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    logger.info(f"📤 Uploading file: {file.filename}")
     
-    # Verify user has access
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
+    # Validate file
+    if not file.filename:
+        raise HTTPException(400, "No file selected")
     
-    if not workspace:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    # Get file extension
+    file_ext = file.filename.split('.')[-1].lower()
+    supported = ["csv", "json", "parquet", "xlsx", "xls", "tsv"]
+    if file_ext not in supported:
+        raise HTTPException(400, f"Unsupported format: .{file_ext}. Use: {', '.join(supported)}")
     
-    # Verify datasource exists
-    datasource = db.query(Datasource).filter(
-        Datasource.id == dataset_data.datasource_id,
-        Datasource.project_id == project_id
-    ).first()
+    # Read file content
+    try:
+        file_content = await file.read()
+        file_size = len(file_content)
+        
+        # Validate size (1GB max)
+        max_size = 1024 * 1024 * 1024
+        if file_size > max_size:
+            raise HTTPException(400, f"File too large ({file_size / 1024 / 1024:.1f}MB). Max: 1GB")
+        
+        logger.info(f"✅ File read: {file_size / 1024:.1f}KB")
+        
+    except Exception as e:
+        logger.error(f"❌ Error reading file: {str(e)}")
+        raise HTTPException(400, f"Error reading file: {str(e)}")
     
-    if not datasource:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found")
+    # Infer schema from file
+    try:
+        schema, row_count, quality_score = _infer_schema(file_content, file_ext)
+        logger.info(f"✅ Schema inferred: {len(schema)} columns, {row_count} rows, quality: {quality_score}%")
+        
+    except Exception as e:
+        logger.warning(f"⚠️  Schema inference failed: {str(e)}")
+        schema = []
+        row_count = 0
+        quality_score = 0
     
-    # Create dataset
-    db_dataset = Dataset(
+    # Create dataset record
+    dataset = Dataset(
         project_id=project_id,
-        datasource_id=dataset_data.datasource_id,
-        name=dataset_data.name,
-        description=dataset_data.description,
-        row_count=0,
-        column_count=0,
-        is_processed=False
+        name=name,
+        description=description,
+        source_type="upload",
+        file_name=file.filename,
+        file_format=file_ext,
+        file_size_bytes=file_size,
+        file_content=file_content,  # ← Store file as blob
+        row_count=row_count,
+        column_count=len(schema),
+        schema=schema,
+        schema_inferred=len(schema) > 0,
+        schema_confidence=95.0 if schema else 0,
+        quality_score=quality_score,
+        tags=json.loads(tags) if tags else [],
+        status="ready",
+        created_by=current_user.id
     )
     
-    db.add(db_dataset)
+    db.add(dataset)
     db.commit()
-    db.refresh(db_dataset)
+    db.refresh(dataset)
     
-    logger.info(f"✅ Dataset created: {dataset_data.name}")
-    return db_dataset
+    logger.info(f"✅ Dataset created: {dataset.id}")
+    
+    return {
+        "id": dataset.id,
+        "name": dataset.name,
+        "file_name": dataset.file_name,
+        "file_size_mb": file_size / 1024 / 1024,
+        "row_count": row_count,
+        "column_count": len(schema),
+        "quality_score": quality_score,
+        "schema": schema,
+        "status": "ready",
+        "created_at": dataset.created_at.isoformat()
+    }
 
 
 # ============================================================================
 # LIST DATASETS
 # ============================================================================
 
-@router.get(
-    "/{project_id}",
-    response_model=List[DatasetResponse],
-    summary="List datasets",
-    description="Get all datasets for a project"
-)
+@router.get("/{project_id}", summary="List datasets")
 def list_datasets(
     project_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Get all datasets for a project
+    """List all datasets for a project"""
     
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - project_id: The UUID of the project
-    
-    **Response (200 OK):**
-    ```json
-    [
-      {
-        "id": "dataset-uuid",
-        "project_id": "project-uuid",
-        "name": "Customer Data v1",
-        ...
-      }
-    ]
-    ```
-    """
+    # Verify access
+    project = verify_project_access(project_id, current_user, db)
     
     logger.info(f"📋 Listing datasets for project: {project_id}")
     
-    # Verify project exists and belongs to user
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    
-    # Get datasets
     datasets = db.query(Dataset).filter(
-        Dataset.project_id == project_id
+        Dataset.project_id == project_id,
+        Dataset.status != "archived"
     ).all()
     
-    logger.info(f"✅ Found {len(datasets)} datasets")
-    return datasets
+    return [
+        {
+            "id": ds.id,
+            "name": ds.name,
+            "file_name": ds.file_name,
+            "file_format": ds.file_format,
+            "row_count": ds.row_count,
+            "column_count": ds.column_count,
+            "quality_score": ds.quality_score,
+            "version": ds.version,
+            "status": ds.status,
+            "created_at": ds.created_at.isoformat()
+        }
+        for ds in datasets
+    ]
 
 
 # ============================================================================
 # GET DATASET DETAILS
 # ============================================================================
 
-@router.get(
-    "/details/{dataset_id}",
-    response_model=DatasetResponse,
-    summary="Get dataset details",
-    description="Get detailed information about a dataset"
-)
-def get_dataset(
+@router.get("/details/{dataset_id}", summary="Get dataset details")
+def get_dataset_details(
     dataset_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Get dataset details
+    """Get dataset details (schema, quality, etc)"""
     
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - dataset_id: The UUID of the dataset
-    
-    **Response (200 OK):**
-    ```json
-    {
-      "id": "dataset-uuid",
-      "project_id": "project-uuid",
-      "name": "Customer Data v1",
-      ...
-    }
-    ```
-    """
-    
-    logger.info(f"🔍 Getting dataset: {dataset_id}")
-    
-    # Get dataset
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+        raise HTTPException(404, "Dataset not found")
     
-    # Verify user has access
-    project = db.query(Project).filter(Project.id == dataset.project_id).first()
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
+    # Verify access
+    project = verify_project_access(dataset.project_id, current_user, db)
     
-    if not workspace:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    return {
+        "id": dataset.id,
+        "name": dataset.name,
+        "description": dataset.description,
+        "file_name": dataset.file_name,
+        "file_format": dataset.file_format,
+        "file_size_mb": dataset.file_size_bytes / 1024 / 1024 if dataset.file_size_bytes else 0,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "schema": dataset.schema,
+        "quality_score": dataset.quality_score,
+        "missing_values_count": dataset.missing_values_count,
+        "missing_values_pct": dataset.missing_values_pct,
+        "duplicates_count": dataset.duplicates_count,
+        "tags": dataset.tags,
+        "status": dataset.status,
+        "version": dataset.version,
+        "created_at": dataset.created_at.isoformat()
+    }
+
+
+# ============================================================================
+# GET DATA PROFILE / QUALITY REPORT
+# ============================================================================
+
+@router.get("/{dataset_id}/profile", summary="Get data quality profile")
+def get_dataset_profile(
+    dataset_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get data quality report"""
     
-    return dataset
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(404, "Dataset not found")
+    
+    # Verify access
+    project = verify_project_access(dataset.project_id, current_user, db)
+    
+    return {
+        "dataset_id": dataset.id,
+        "name": dataset.name,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "quality_metrics": {
+            "overall_score": dataset.quality_score,
+            "completeness": 100 - (dataset.missing_values_pct or 0),
+            "uniqueness": 100 - (dataset.duplicate_rows_pct or 0) if hasattr(dataset, 'duplicate_rows_pct') else 100,
+            "missing_values_count": dataset.missing_values_count,
+            "missing_values_pct": dataset.missing_values_pct,
+            "duplicates_count": dataset.duplicates_count
+        },
+        "schema": dataset.schema,
+        "quality_report": dataset.quality_report,
+        "last_updated": dataset.updated_at.isoformat()
+    }
 
 
 # ============================================================================
 # DELETE DATASET
 # ============================================================================
 
-@router.delete(
-    "/{dataset_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete dataset",
-    description="Delete a dataset"
-)
+@router.delete("/{dataset_id}", status_code=204, summary="Delete dataset")
 def delete_dataset(
     dataset_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Delete a dataset
+    """Delete dataset (soft delete)"""
     
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - dataset_id: The UUID of the dataset
-    
-    **Response (204 No Content):**
-    ```
-    (Empty response)
-    ```
-    """
-    
-    logger.info(f"🗑️  Deleting dataset: {dataset_id}")
-    
-    # Get dataset
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+        raise HTTPException(404, "Dataset not found")
     
-    # Verify user has access
-    project = db.query(Project).filter(Project.id == dataset.project_id).first()
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
+    # Verify access
+    project = verify_project_access(dataset.project_id, current_user, db)
     
-    if not workspace:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    logger.info(f"🗑️  Deleting: {dataset_id}")
     
-    # Delete
-    db.delete(dataset)
+    dataset.status = "archived"
+    dataset.updated_at = datetime.utcnow()
+    
     db.commit()
     
-    logger.info(f"✅ Dataset deleted: {dataset.name}")
+    logger.info(f"✅ Archived: {dataset_id}")
 
 
 # ============================================================================
-# GET DATASET STATISTICS
+# SCHEMA INFERENCE
 # ============================================================================
 
-@router.get(
-    "/stats/{dataset_id}",
-    summary="Get dataset statistics",
-    description="Get statistical summary of dataset"
-)
-def get_dataset_stats(
-    dataset_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
+def _infer_schema(file_content: bytes, file_format: str) -> tuple:
     """
-    Get dataset statistics
+    Infer schema from file
     
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - dataset_id: The UUID of the dataset
-    
-    **Response (200 OK):**
-    ```json
-    {
-      "dataset_id": "dataset-uuid",
-      "row_count": 10000,
-      "column_count": 15,
-      "missing_values": 42,
-      "duplicate_rows": 5,
-      "memory_usage": "15.2 MB",
-      "columns": {
-        "name": {"type": "string", "unique": 9950},
-        "age": {"type": "integer", "min": 18, "max": 75, "mean": 45.3}
-      }
-    }
-    ```
+    Returns: (schema, row_count, quality_score)
     """
     
-    logger.info(f"📊 Getting statistics for dataset: {dataset_id}")
-    
-    # Get dataset
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not dataset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
-    
-    # Verify user has access
-    project = db.query(Project).filter(Project.id == dataset.project_id).first()
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
-    
-    # Return only real database data (no defaults/mocks)
-    stats = {
-        "dataset_id": dataset_id,
-        "name": dataset.name,
-        "row_count": dataset.row_count,
-        "column_count": dataset.column_count,
-        "missing_values_count": dataset.missing_values_count,
-        "duplicate_rows_count": dataset.duplicate_rows_count,
-        "is_processed": dataset.is_processed,
-        "columns_info": dataset.columns_info,
-        "created_at": dataset.created_at.isoformat() if dataset.created_at else None,
-        "updated_at": dataset.updated_at.isoformat() if dataset.updated_at else None
-    }
-    
-    logger.info(f"✅ Statistics retrieved")
-    return stats
+    try:
+        import pandas as pd
+        
+        # Read file based on format
+        if file_format == "csv":
+            df = pd.read_csv(io.BytesIO(file_content))
+        elif file_format == "tsv":
+            df = pd.read_csv(io.BytesIO(file_content), sep="\t")
+        elif file_format == "json":
+            df = pd.read_json(io.BytesIO(file_content))
+        elif file_format in ["xlsx", "xls"]:
+            df = pd.read_excel(io.BytesIO(file_content))
+        elif file_format == "parquet":
+            df = pd.read_parquet(io.BytesIO(file_content))
+        else:
+            raise ValueError(f"Unsupported format: {file_format}")
+        
+        # Build schema
+        schema = []
+        for col in df.columns:
+            col_type = str(df[col].dtype)
+            
+            # Convert numpy types to simple types
+            if "int" in col_type:
+                simple_type = "integer"
+            elif "float" in col_type:
+                simple_type = "float"
+            elif "object" in col_type:
+                simple_type = "string"
+            elif "datetime" in col_type or "date" in col_type:
+                simple_type = "datetime"
+            elif "bool" in col_type:
+                simple_type = "boolean"
+            else:
+                simple_type = "string"
+            
+            schema.append({
+                "name": col,
+                "type": simple_type,
+                "nullable": bool(df[col].isnull().any()),
+                "description": ""
+            })
+        
+        # Calculate quality
+        total_cells = df.shape[0] * df.shape[1]
+        missing_cells = df.isnull().sum().sum()
+        quality_score = 100 * (1 - missing_cells / max(total_cells, 1))
+        
+        return schema, df.shape[0], quality_score
+        
+    except Exception as e:
+        logger.error(f"Schema inference error: {str(e)}")
+        raise
 
 
-# ============================================================================
-# PROCESS DATASET
-# ============================================================================
-
-@router.post(
-    "/process/{dataset_id}",
-    response_model=DatasetResponse,
-    summary="Process dataset",
-    description="Process dataset for ML (cleaning, validation, etc)"
-)
-def process_dataset(
-    dataset_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Process dataset for ML
-    
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - dataset_id: The UUID of the dataset
-    
-    **Response (200 OK):**
-    ```json
-    {
-      "id": "dataset-uuid",
-      "is_processed": true,
-      "row_count": 9995,
-      "column_count": 15,
-      ...
-    }
-    ```
-    """
-    
-    logger.info(f"🔄 Processing dataset: {dataset_id}")
-    
-    # Get dataset
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not dataset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
-    
-    # Verify user has access
-    project = db.query(Project).filter(Project.id == dataset.project_id).first()
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
-    
-    # Mark as processed
-    dataset.is_processed = True
-    dataset.row_count = dataset.row_count or 10000
-    dataset.column_count = dataset.column_count or 15
-    
-    db.commit()
-    db.refresh(dataset)
-    
-    logger.info(f"✅ Dataset processed: {dataset.name}")
-    return dataset
