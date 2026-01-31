@@ -9,7 +9,7 @@ PHASES:
 - Phase 2: Datasource, Dataset
 """
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Text, JSON, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
