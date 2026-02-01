@@ -11,7 +11,7 @@ import io
 from datetime import datetime
 
 from app.core.database import get_db
-from app.models.models import User, Workspace, Project, Dataset
+from app.models.models import User, Project, Dataset
 from app.core.auth import verify_token, extract_token_from_header
 
 logger = logging.getLogger(__name__)
@@ -33,11 +33,7 @@ def verify_project_access(project_id: str, user: User, db: Session) -> Project:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == user.id
-    ).first()
-    if not workspace:
+    if project.owner_id != user.id:
         raise HTTPException(status_code=403, detail="No access to project")
     return project
 

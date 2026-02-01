@@ -20,7 +20,7 @@ from datetime import datetime
 import logging
 
 from app.core.database import get_db
-from app.models.models import User, Workspace, Project, Model
+from app.models.models import User, Project, Model
 from app.schemas import ModelCreate, ModelResponse
 from app.core.auth import extract_token_from_header, verify_token
 
@@ -122,16 +122,11 @@ def create_model(
             detail="Project not found"
         )
     
-    # Verify user has access
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
+    # Verify user owns project
+    if project.owner_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this project"
         )
     
     # Create model
