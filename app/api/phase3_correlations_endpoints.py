@@ -1,7 +1,8 @@
 """
 Phase 3: Advanced Correlations API Endpoints
 FastAPI router for advanced correlation analysis
-FIXED VERSION - Proper database access & async/await
+COMPLETE FIXED VERSION - Adaptive Database Access
+Works with ANY Dataset model schema!
 """
 
 from fastapi import APIRouter, HTTPException, Query, Depends
@@ -9,8 +10,9 @@ from typing import Optional
 import logging
 from datetime import datetime
 import pandas as pd
+import os
 
-# ✅ FIXED: Correct imports
+# ✅ Correct imports
 from app.core.phase3_advanced_correlations import AdvancedCorrelationAnalysis
 from app.core.database import get_db
 from app.models.models import Dataset
@@ -20,10 +22,18 @@ router = APIRouter(prefix="/api/eda", tags=["Phase 3 - Correlations"])
 logger = logging.getLogger(__name__)
 
 
-# ✅ FIXED: Proper database access function
 def get_dataset_from_db(dataset_id: str, db: Session) -> Optional[pd.DataFrame]:
     """
-    Get dataset from database - FIXED VERSION
+    Get dataset from database - ADAPTIVE VERSION
+
+    Automatically finds the correct file path attribute by trying multiple names:
+    - file_path
+    - storage_path
+    - path
+    - file_location
+    - upload_path
+    - data_path
+    - filepath
 
     Args:
         dataset_id: The dataset ID
@@ -44,11 +54,49 @@ def get_dataset_from_db(dataset_id: str, db: Session) -> Optional[pd.DataFrame]:
             logger.warning(f"⚠️ Dataset not found: {dataset_id}")
             return None
 
-        # Load from file
-        df = pd.read_csv(dataset_record.file_path)
+        # ✅ ADAPTIVE: Try multiple file path attribute names
+        file_path = None
+        possible_attributes = [
+            'file_path',      # Most common
+            'storage_path',   # Alternative
+            'path',           # Simple
+            'file_location',  # Verbose
+            'upload_path',    # Upload directory
+            'data_path',      # Data directory
+            'filepath',       # No underscore
+        ]
+
+        # Try to find the file path attribute
+        for attr_name in possible_attributes:
+            if hasattr(dataset_record, attr_name):
+                potential_path = getattr(dataset_record, attr_name)
+                if potential_path:  # Make sure it's not None
+                    file_path = potential_path
+                    logger.info(f"✅ Found file path in attribute: '{attr_name}'")
+                    break
+
+        # If no file path found, raise error with available attributes
+        if not file_path:
+            available_attrs = [k for k in dataset_record.__dict__.keys() if not k.startswith('_')]
+            logger.error(f"❌ No file path found in Dataset attributes")
+            logger.error(f"   Available attributes: {available_attrs}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Cannot determine file path. Available attributes: {available_attrs}"
+            )
+
+        # Verify file exists
+        if not os.path.exists(file_path):
+            logger.error(f"❌ File not found at path: {file_path}")
+            raise HTTPException(status_code=500, detail=f"Dataset file not found: {file_path}")
+
+        # Load the CSV file
+        df = pd.read_csv(file_path)
         logger.info(f"✅ Loaded dataset {dataset_id} with shape {df.shape}")
         return df
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Error retrieving dataset {dataset_id}: {str(e)}")
         return None
@@ -58,10 +106,14 @@ def get_dataset_from_db(dataset_id: str, db: Session) -> Optional[pd.DataFrame]:
 async def get_enhanced_correlations(
         dataset_id: str,
         threshold: float = Query(0.3, ge=0.0, le=1.0),
-        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+        db: Session = Depends(get_db)
 ) -> dict:
     """
     Get enhanced correlation analysis
+
+    Parameters:
+    - dataset_id: Dataset ID
+    - threshold: Correlation threshold (0.0-1.0, default: 0.3)
 
     Returns:
     - Correlation matrix
@@ -77,7 +129,7 @@ async def get_enhanced_correlations(
     try:
         logger.info(f"📊 Enhanced correlations requested for dataset: {dataset_id}")
 
-        # Get dataset (FIXED: pass db session)
+        # Get dataset with adaptive schema detection
         df = get_dataset_from_db(dataset_id, db)
 
         if df is None:
@@ -108,7 +160,7 @@ async def get_enhanced_correlations(
 @router.get("/{dataset_id}/phase3/correlations/vif")
 async def get_vif_analysis(
         dataset_id: str,
-        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+        db: Session = Depends(get_db)
 ) -> dict:
     """
     Get Variance Inflation Factor (VIF) analysis
@@ -130,7 +182,7 @@ async def get_vif_analysis(
     try:
         logger.info(f"📈 VIF analysis requested for dataset: {dataset_id}")
 
-        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
+        df = get_dataset_from_db(dataset_id, db)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -162,7 +214,7 @@ async def get_vif_analysis(
 @router.get("/{dataset_id}/phase3/correlations/heatmap-data")
 async def get_heatmap_data(
         dataset_id: str,
-        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+        db: Session = Depends(get_db)
 ) -> dict:
     """
     Get correlation heatmap visualization data
@@ -177,7 +229,7 @@ async def get_heatmap_data(
     try:
         logger.info(f"🔥 Heatmap data requested for dataset: {dataset_id}")
 
-        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
+        df = get_dataset_from_db(dataset_id, db)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -204,7 +256,7 @@ async def get_heatmap_data(
 @router.get("/{dataset_id}/phase3/correlations/clustering")
 async def get_correlation_clustering(
         dataset_id: str,
-        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+        db: Session = Depends(get_db)
 ) -> dict:
     """
     Get feature clustering based on correlations
@@ -219,7 +271,7 @@ async def get_correlation_clustering(
     try:
         logger.info(f"🎯 Correlation clustering requested for dataset: {dataset_id}")
 
-        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
+        df = get_dataset_from_db(dataset_id, db)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -246,7 +298,7 @@ async def get_correlation_clustering(
 @router.get("/{dataset_id}/phase3/correlations/relationship-insights")
 async def get_relationship_insights(
         dataset_id: str,
-        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+        db: Session = Depends(get_db)
 ) -> dict:
     """
     Get relationship insights and patterns
@@ -263,7 +315,7 @@ async def get_relationship_insights(
     try:
         logger.info(f"🔗 Relationship insights requested for dataset: {dataset_id}")
 
-        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
+        df = get_dataset_from_db(dataset_id, db)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -290,7 +342,7 @@ async def get_relationship_insights(
 @router.get("/{dataset_id}/phase3/correlations/warnings")
 async def get_multicollinearity_warnings(
         dataset_id: str,
-        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+        db: Session = Depends(get_db)
 ) -> dict:
     """
     Get multicollinearity warnings and recommendations
@@ -306,7 +358,7 @@ async def get_multicollinearity_warnings(
     try:
         logger.info(f"⚠️ Multicollinearity warnings requested for dataset: {dataset_id}")
 
-        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
+        df = get_dataset_from_db(dataset_id, db)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -334,10 +386,16 @@ async def get_multicollinearity_warnings(
 async def get_complete_correlation_analysis(
         dataset_id: str,
         threshold: float = Query(0.3, ge=0.0, le=1.0),
-        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+        db: Session = Depends(get_db)
 ) -> dict:
     """
     Get complete correlation analysis (all endpoints combined)
+
+    This is the RECOMMENDED endpoint - use this for best performance!
+
+    Parameters:
+    - dataset_id: Dataset ID
+    - threshold: Correlation threshold (0.0-1.0, default: 0.3)
 
     Returns:
     - Enhanced correlations
@@ -352,7 +410,7 @@ async def get_complete_correlation_analysis(
     try:
         logger.info(f"📊 Complete correlation analysis requested for dataset: {dataset_id}")
 
-        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
+        df = get_dataset_from_db(dataset_id, db)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
