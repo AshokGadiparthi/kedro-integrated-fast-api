@@ -47,3 +47,24 @@ class Activity(Base):
     entity_id = Column(String)
     details = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Datasource(Base):
+    """Datasource model"""
+    __tablename__ = "datasources"
+    
+    id = Column(String, primary_key=True)
+    name = Column(String, index=True)
+    type = Column(String)
+    connection_string = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Model(Base):
+    """ML Model model"""
+    __tablename__ = "models"
+    
+    id = Column(String, primary_key=True)
+    name = Column(String, index=True)
+    project_id = Column(String, index=True)
+    description = Column(Text, nullable=True)
+    model_type = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

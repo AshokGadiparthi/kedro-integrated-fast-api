@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import StaticPool
 
 # Database URL
-DATABASE_URL = "sqlite:///./test.db"
+DATABASE_URL = "sqlite:///./ml_platform.db"
 
 # Create engine
 engine = create_engine(
