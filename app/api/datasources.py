@@ -1,11 +1,13 @@
 """
 Datasources API - Phase 3
 Manage data sources (MySQL, PostgreSQL, APIs, etc)
+All fields use snake_case (Python standard)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Body
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from typing import Optional
+from pydantic import BaseModel
 import logging
 from datetime import datetime
 
@@ -15,6 +17,21 @@ from app.core.auth import verify_token, extract_token_from_header
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# ============================================================================
+# PYDANTIC MODELS - snake_case ONLY
+# ============================================================================
+
+class DatasourceCreate(BaseModel):
+    """Request model - ALL fields use snake_case"""
+    name: str
+    type: str
+    host: str
+    port: int
+    database_name: str
+    username: str
+    password: str
+    description: Optional[str] = None
 
 def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)) -> User:
     token = extract_token_from_header(authorization)
@@ -41,54 +58,47 @@ def verify_project_access(project_id: str, user: User, db: Session) -> Project:
     return project
 
 # ============================================================================
-# CREATE DATASOURCE - FIXED PARAMETER HANDLING
+# CREATE DATASOURCE
 # ============================================================================
 
 @router.post("/{project_id}", status_code=201, summary="Create datasource")
 def create_datasource(
     project_id: str,
-    name: str = Body(...),
-    type: str = Body(...),
-    host: str = Body(...),
-    port: int = Body(...),
-    database_name: str = Body(...),
-    username: str = Body(...),
-    password: str = Body(...),
-    description: Optional[str] = Body(None),
+    data: DatasourceCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new datasource"""
+    """Create a new datasource - ALL fields must use snake_case"""
     
     project = verify_project_access(project_id, current_user, db)
     
     # Validate type
     valid_types = ["mysql", "postgresql", "sqlite", "s3", "api", "mongodb"]
-    if type.lower() not in valid_types:
+    if data.type.lower() not in valid_types:
         raise HTTPException(400, f"Invalid type. Use: {', '.join(valid_types)}")
     
-    logger.info(f"📝 Creating datasource: {name} ({type})")
+    logger.info(f"📝 Creating datasource: {data.name} ({data.type})")
     
     # Create connection config
     connection_config = {
-        "host": host,
-        "port": port,
-        "database": database_name,
-        "username": username,
-        "password": password
+        "host": data.host,
+        "port": data.port,
+        "database": data.database_name,
+        "username": data.username,
+        "password": data.password
     }
     
     # Create datasource
     datasource = Datasource(
         project_id=project_id,
-        name=name,
-        type=type.lower(),
-        host=host,
-        port=port,
-        database_name=database_name,
-        username=username,
-        password=password,
-        description=description,
+        name=data.name,
+        type=data.type.lower(),
+        host=data.host,
+        port=data.port,
+        database_name=data.database_name,
+        username=data.username,
+        password=data.password,
+        description=data.description,
         status="untested",
         connection_config=connection_config
     )
@@ -104,7 +114,7 @@ def create_datasource(
         "type": datasource.type,
         "host": datasource.host,
         "port": datasource.port,
-        "database": datasource.database_name,
+        "database_name": datasource.database_name,
         "status": datasource.status,
         "created_at": datasource.created_at.isoformat()
     }
@@ -136,7 +146,7 @@ def list_datasources(
             "type": ds.type,
             "host": ds.host,
             "port": ds.port,
-            "database": ds.database_name,
+            "database_name": ds.database_name,
             "status": ds.status,
             "created_at": ds.created_at.isoformat()
         }
@@ -167,7 +177,7 @@ def get_datasource_details(
         "type": datasource.type,
         "host": datasource.host,
         "port": datasource.port,
-        "database": datasource.database_name,
+        "database_name": datasource.database_name,
         "username": datasource.username,
         "status": datasource.status,
         "created_at": datasource.created_at.isoformat(),
@@ -181,13 +191,7 @@ def get_datasource_details(
 @router.put("/{datasource_id}", summary="Update datasource")
 def update_datasource(
     datasource_id: str,
-    name: Optional[str] = Body(None),
-    description: Optional[str] = Body(None),
-    host: Optional[str] = Body(None),
-    port: Optional[int] = Body(None),
-    database_name: Optional[str] = Body(None),
-    username: Optional[str] = Body(None),
-    password: Optional[str] = Body(None),
+    data: DatasourceCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -199,22 +203,16 @@ def update_datasource(
     
     project = verify_project_access(datasource.project_id, current_user, db)
     
-    if name:
-        datasource.name = name
-    if description is not None:
-        datasource.description = description
-    if host:
-        datasource.host = host
-    if port:
-        datasource.port = port
-    if database_name:
-        datasource.database_name = database_name
-    if username:
-        datasource.username = username
-    if password:
-        datasource.password = password
-    
+    datasource.name = data.name
+    datasource.type = data.type.lower()
+    datasource.host = data.host
+    datasource.port = data.port
+    datasource.database_name = data.database_name
+    datasource.username = data.username
+    datasource.password = data.password
+    datasource.description = data.description
     datasource.updated_at = datetime.utcnow()
+    
     db.commit()
     db.refresh(datasource)
     
