@@ -3,13 +3,24 @@ SQLAlchemy Models - Phase 3
 Complete data models for ML Platform
 """
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, Float, JSON, ForeignKey, LargeBinary
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, Float, JSON, ForeignKey, LargeBinary, Table
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import uuid
 
 Base = declarative_base()
+
+# ============================================================================
+# ASSOCIATION TABLE - Define FIRST before models that use it
+# ============================================================================
+
+model_datasets = Table(
+    "model_datasets",
+    Base.metadata,
+    Column("model_id", String(36), ForeignKey("models.id"), primary_key=True),
+    Column("dataset_id", String(36), ForeignKey("datasets.id"), primary_key=True),
+)
 
 # ============================================================================
 # USER MODEL - PHASE 1
@@ -107,7 +118,7 @@ class Datasource(Base):
     type = Column(String(50), nullable=False)
     description = Column(Text, nullable=True)
     
-    # Connection Details ✅ NOW INCLUDED!
+    # Connection Details ✅
     host = Column(String(255), nullable=True)
     port = Column(Integer, nullable=True)
     database_name = Column(String(255), nullable=True)
@@ -189,7 +200,7 @@ class Dataset(Base):
     
     project = relationship("Project", back_populates="datasets", lazy="select")
     datasource = relationship("Datasource", back_populates="datasets", lazy="select")
-    models = relationship("Model", secondary="model_datasets", back_populates="datasets", lazy="select")
+    models = relationship("Model", secondary=model_datasets, back_populates="datasets", lazy="select")
     
     def __repr__(self):
         return f"<Dataset {self.name}>"
@@ -230,7 +241,7 @@ class Model(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     project = relationship("Project", back_populates="models", lazy="select")
-    datasets = relationship("Dataset", secondary="model_datasets", back_populates="models", lazy="select")
+    datasets = relationship("Dataset", secondary=model_datasets, back_populates="models", lazy="select")
     
     def __repr__(self):
         return f"<Model {self.name}>"
@@ -262,24 +273,4 @@ class Activity(Base):
     
     def __repr__(self):
         return f"<Activity {self.action}>"
-
-# ============================================================================
-# ASSOCIATION TABLES
-# ============================================================================
-
-model_datasets = Table(
-    "model_datasets",
-    Base.metadata,
-    Column("model_id", String(36), ForeignKey("models.id"), primary_key=True),
-    Column("dataset_id", String(36), ForeignKey("datasets.id"), primary_key=True),
-)
-
-from sqlalchemy import Table
-
-model_datasets = Table(
-    "model_datasets",
-    Base.metadata,
-    Column("model_id", String(36), ForeignKey("models.id"), primary_key=True),
-    Column("dataset_id", String(36), ForeignKey("datasets.id"), primary_key=True),
-)
 
