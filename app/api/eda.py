@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status, Backgrou
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.cache_manager import cache_manager
+from app.core.cache import cache_manager
 from app.models.models import EdaResult
 from app.schemas.eda_schemas import (
     AnalysisRequest, AnalysisResponse, JobStatusResponse, HealthResponse,
