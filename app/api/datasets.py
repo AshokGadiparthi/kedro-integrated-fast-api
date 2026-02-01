@@ -41,53 +41,43 @@ from fastapi import APIRouter, Depends, Path, UploadFile, File, Form
 
 @router.post("/", response_model=None)
 async def create_dataset(
-    file: UploadFile = File(...),
-    name: str = Form(""),
-    project_id: str = Form(""),
-    description: str = Form(""),
+    file: UploadFile = File(None),
+    name: str = Form(None),
+    project_id: str = Form(None),
+    description: str = Form(None),
     db: Session = Depends(get_db)
 ):
-    """Create new dataset - ACCEPTS FormData with file and metadata"""
+    """Create new dataset with file upload"""
     
     try:
-        # Use defaults if empty
-        dataset_name = name if name else "dataset"
-        dataset_project_id = project_id if project_id else None
-        
-        # Create dataset record with parameters from FormData
+        # Create dataset
         new_dataset = Dataset(
             id=str(uuid4()),
-            name=dataset_name,
-            project_id=dataset_project_id,
-            description=description,
-            file_name=file.filename if file else "data.csv",
+            name=name or "dataset",
+            project_id=project_id,
+            description=description or "",
+            file_name="data.csv",
             file_size_bytes=0,
             created_at=datetime.now()
         )
         db.add(new_dataset)
         db.flush()
         
-        # Save file
-        if file and file.filename:
+        # Save file if provided
+        if file:
             contents = await file.read()
-            
-            # Save to filesystem
             file_path = f"{UPLOAD_DIR}/{new_dataset.id}.csv"
             with open(file_path, "wb") as f:
                 f.write(contents)
             
-            # Cache in memory
             try:
                 df = pd.read_csv(io.BytesIO(contents))
                 dataset_cache[new_dataset.id] = df
-                print(f"✅ CSV cached: {len(df)} rows, {len(df.columns)} columns")
-            except Exception as e:
-                print(f"⚠️ Could not parse CSV: {e}")
+            except:
+                pass
             
-            # Update dataset with actual file info
             new_dataset.file_name = file.filename
             new_dataset.file_size_bytes = len(contents)
-            print(f"✅ File saved: {file.filename}, Size: {len(contents)} bytes")
         
         db.commit()
         db.refresh(new_dataset)
@@ -103,7 +93,6 @@ async def create_dataset(
         }
     except Exception as e:
         db.rollback()
-        print(f"❌ Error: {str(e)}")
         return {"error": str(e)}
 
 @router.post("/{dataset_id}/upload")
