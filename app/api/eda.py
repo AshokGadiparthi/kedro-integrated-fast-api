@@ -115,10 +115,13 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
         file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
         
         # Get the original job data (has dataset_id, created_at, etc.)
-        original_job = await cache_manager.get(f"eda:job:{job_id}")
-        if not original_job:
+        original_job_data = await cache_manager.get(f"eda:job:{job_id}")
+        if not original_job_data:
             logger.error(f"❌ Original job not found: {job_id}")
             return
+        
+        # Parse if it's a JSON string
+        original_job = original_job_data if isinstance(original_job_data, dict) else json.loads(original_job_data)
         
         # Load from cache or file
         if dataset_id in dataset_cache:
@@ -168,8 +171,9 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
     except Exception as e:
         logger.error(f"❌ EDA analysis failed: {str(e)}")
         # Get original job to preserve required fields
-        original_job = await cache_manager.get(f"eda:job:{job_id}")
-        if original_job:
+        original_job_data = await cache_manager.get(f"eda:job:{job_id}")
+        if original_job_data:
+            original_job = original_job_data if isinstance(original_job_data, dict) else json.loads(original_job_data)
             failed_job = {
                 **original_job,
                 "status": "failed",
