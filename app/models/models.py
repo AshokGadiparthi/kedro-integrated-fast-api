@@ -1,6 +1,6 @@
 """
 SQLAlchemy Models - Phase 3
-Complete data models for ML Platform
+All models properly structured to ensure registration with Base
 """
 
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, Float, JSON, ForeignKey, LargeBinary, Table
@@ -12,24 +12,22 @@ import uuid
 Base = declarative_base()
 
 # ============================================================================
-# ASSOCIATION TABLE - Define FIRST before models that use it
+# ASSOCIATION TABLE - Define FIRST
 # ============================================================================
 
 model_datasets = Table(
-    "model_datasets",
+    'model_datasets',
     Base.metadata,
-    Column("model_id", String(36), ForeignKey("models.id"), primary_key=True),
-    Column("dataset_id", String(36), ForeignKey("datasets.id"), primary_key=True),
+    Column('model_id', String(36), ForeignKey('models.id'), primary_key=True),
+    Column('dataset_id', String(36), ForeignKey('datasets.id'), primary_key=True)
 )
 
 # ============================================================================
-# USER MODEL - PHASE 1
+# USER MODEL
 # ============================================================================
 
 class User(Base):
-    """User model for authentication"""
-    
-    __tablename__ = "users"
+    __tablename__ = 'users'
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String(255), unique=True, nullable=False, index=True)
@@ -39,7 +37,6 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     is_superuser = Column(Boolean, default=False)
-    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -50,20 +47,17 @@ class User(Base):
         return f"<User {self.username}>"
 
 # ============================================================================
-# WORKSPACE MODEL - PHASE 1
+# WORKSPACE MODEL
 # ============================================================================
 
 class Workspace(Base):
-    """Workspace model - container for projects"""
-    
-    __tablename__ = "workspaces"
+    __tablename__ = 'workspaces'
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    owner_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -75,20 +69,17 @@ class Workspace(Base):
         return f"<Workspace {self.name}>"
 
 # ============================================================================
-# PROJECT MODEL - PHASE 1
+# PROJECT MODEL
 # ============================================================================
 
 class Project(Base):
-    """Project model - container for datasets and models"""
-    
-    __tablename__ = "projects"
+    __tablename__ = 'projects'
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    workspace_id = Column(String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    workspace_id = Column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -102,43 +93,31 @@ class Project(Base):
         return f"<Project {self.name}>"
 
 # ============================================================================
-# DATASOURCE MODEL - PHASE 2 + PHASE 3
+# DATASOURCE MODEL
 # ============================================================================
 
 class Datasource(Base):
-    """Datasource model - database connections and APIs"""
-    
-    __tablename__ = "datasources"
+    __tablename__ = 'datasources'
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
-    
-    # Basic Info
+    project_id = Column(String(36), ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     type = Column(String(50), nullable=False)
     description = Column(Text, nullable=True)
-    
-    # Connection Details ✅
     host = Column(String(255), nullable=True)
     port = Column(Integer, nullable=True)
     database_name = Column(String(255), nullable=True)
     username = Column(String(255), nullable=True)
     password = Column(String(500), nullable=True)
     connection_config = Column(JSON, nullable=True)
-    
-    # Status & Testing
-    status = Column(String(50), default="untested")
+    status = Column(String(50), default='untested')
     is_active = Column(Boolean, default=True, nullable=False)
     is_connected = Column(Boolean, default=False, nullable=False)
     last_tested_at = Column(DateTime, nullable=True)
     test_result = Column(JSON, nullable=True)
-    
-    # Metadata
     tags = Column(JSON, nullable=True)
     owner = Column(String(255), nullable=True)
     documentation_url = Column(String(500), nullable=True)
-    
-    # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -146,55 +125,38 @@ class Datasource(Base):
     datasets = relationship("Dataset", back_populates="datasource", cascade="all, delete-orphan", lazy="select")
     
     def __repr__(self):
-        return f"<Datasource {self.name} ({self.type})>"
+        return f"<Datasource {self.name}>"
 
 # ============================================================================
-# DATASET MODEL - PHASE 2 + PHASE 3
+# DATASET MODEL
 # ============================================================================
 
 class Dataset(Base):
-    """Dataset model - processed data ready for ML"""
-    
-    __tablename__ = "datasets"
+    __tablename__ = 'datasets'
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
-    datasource_id = Column(String(36), ForeignKey("datasources.id", ondelete="SET NULL"), nullable=True, index=True)
-    
+    project_id = Column(String(36), ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, index=True)
+    datasource_id = Column(String(36), ForeignKey('datasources.id', ondelete='SET NULL'), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    
-    # File Information
     file_name = Column(String(255), nullable=True)
     file_format = Column(String(50), nullable=True)
     file_content = Column(LargeBinary, nullable=True)
-    
-    # Data Info
     row_count = Column(Integer, nullable=True)
     column_count = Column(Integer, nullable=True)
     columns_info = Column(JSON, nullable=True)
-    
-    # Data Quality
     quality_score = Column(Float, nullable=True)
     missing_values_count = Column(Integer, nullable=True)
     missing_values_pct = Column(Float, nullable=True)
     duplicate_rows_count = Column(Integer, nullable=True)
     duplicate_rows_pct = Column(Float, nullable=True)
-    
-    # Schema Inference
     schema_inferred = Column(Boolean, default=False)
     schema_confidence = Column(Float, nullable=True)
-    
-    # Versioning
     version = Column(Integer, default=1)
     is_latest = Column(Boolean, default=True)
     parent_version_id = Column(String(36), nullable=True)
-    
-    # Status
-    status = Column(String(50), default="ready")
+    status = Column(String(50), default='ready')
     is_active = Column(Boolean, default=True)
-    
-    # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -206,37 +168,26 @@ class Dataset(Base):
         return f"<Dataset {self.name}>"
 
 # ============================================================================
-# MODEL MODEL - PHASE 3
+# MODEL MODEL
 # ============================================================================
 
 class Model(Base):
-    """Model model - ML models trained on datasets"""
-    
-    __tablename__ = "models"
+    __tablename__ = 'models'
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
-    
+    project_id = Column(String(36), ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     model_type = Column(String(100), nullable=False)
-    
-    # Model Info
     algorithm = Column(String(100), nullable=True)
     parameters = Column(JSON, nullable=True)
     model_path = Column(String(500), nullable=True)
-    
-    # Performance
     accuracy = Column(Float, nullable=True)
     precision = Column(Float, nullable=True)
     recall = Column(Float, nullable=True)
     f1_score = Column(Float, nullable=True)
-    
-    # Status
-    status = Column(String(50), default="untrained")
+    status = Column(String(50), default='untrained')
     is_active = Column(Boolean, default=True)
-    
-    # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -247,24 +198,20 @@ class Model(Base):
         return f"<Model {self.name}>"
 
 # ============================================================================
-# ACTIVITY MODEL - PHASE 3
+# ACTIVITY MODEL
 # ============================================================================
 
 class Activity(Base):
-    """Activity model - audit log"""
-    
-    __tablename__ = "activities"
+    __tablename__ = 'activities'
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    workspace_id = Column(String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True)
-    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
-    
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    workspace_id = Column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=True)
+    project_id = Column(String(36), ForeignKey('projects.id', ondelete='CASCADE'), nullable=True)
     action = Column(String(50), nullable=False)
     entity_type = Column(String(50), nullable=False)
     entity_id = Column(String(36), nullable=True)
     details = Column(JSON, nullable=True)
-    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     user = relationship("User", back_populates="activities", lazy="select")
