@@ -3,14 +3,15 @@ Datasets API - Phase 3
 File upload and dataset management
 
 ENDPOINTS:
-POST   /api/datasets/{project_id}             Upload file
-GET    /api/datasets/{project_id}             List datasets
-GET    /api/datasets/details/{id}             Get details
-GET    /api/datasets/{id}/profile             Get quality profile
-DELETE /api/datasets/{id}                     Delete dataset
+POST   /api/datasets/{project_id}          Upload file
+GET    /api/datasets/{project_id}          List datasets
+GET    /api/datasets/details/{id}          Get details
+GET    /api/datasets/{id}/preview          Get file preview
+GET    /api/datasets/{id}/quality          Get quality metrics
+DELETE /api/datasets/{id}                  Delete dataset
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header, File, UploadFile, Query
+from fastapi import APIRouter, Depends, HTTPException, Header, File, UploadFile, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 import logging
@@ -67,7 +68,7 @@ def verify_project_access(project_id: str, user: User, db: Session) -> Project:
 
 
 # ============================================================================
-# UPLOAD FILE - POST /api/datasets/{project_id}?name=...&file=...
+# UPLOAD FILE
 # ============================================================================
 
 @router.post("/{project_id}", status_code=201, summary="Upload dataset")
@@ -167,6 +168,7 @@ def list_datasets(
             "name": ds.name,
             "file_name": ds.file_name,
             "file_format": ds.file_format,
+            "file_size": len(ds.file_content) if ds.file_content else 0,
             "row_count": ds.row_count,
             "column_count": ds.column_count,
             "quality_score": ds.quality_score,
@@ -209,11 +211,65 @@ def get_dataset_details(
 
 
 # ============================================================================
-# GET DATA PROFILE
+# GET DATASET PREVIEW - Returns file preview data
 # ============================================================================
 
-@router.get("/{dataset_id}/profile", summary="Get data quality profile")
-def get_dataset_profile(
+@router.get("/{dataset_id}/preview", summary="Get dataset preview")
+def get_dataset_preview(
+    dataset_id: str,
+    rows: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get preview of dataset file (first N rows)"""
+    
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(404, "Dataset not found")
+    
+    project = verify_project_access(dataset.project_id, current_user, db)
+    
+    try:
+        import pandas as pd
+        
+        # Parse file based on format
+        if dataset.file_format == "csv":
+            df = pd.read_csv(io.BytesIO(dataset.file_content), nrows=rows)
+        elif dataset.file_format == "tsv":
+            df = pd.read_csv(io.BytesIO(dataset.file_content), sep="\t", nrows=rows)
+        elif dataset.file_format == "json":
+            df = pd.read_json(io.BytesIO(dataset.file_content))
+            df = df.head(rows)
+        elif dataset.file_format in ["xlsx", "xls"]:
+            df = pd.read_excel(io.BytesIO(dataset.file_content), nrows=rows)
+        elif dataset.file_format == "parquet":
+            df = pd.read_parquet(io.BytesIO(dataset.file_content))
+            df = df.head(rows)
+        else:
+            raise ValueError(f"Unsupported format: {dataset.file_format}")
+        
+        data = df.to_dict(orient='records')
+        
+        return {
+            "id": dataset.id,
+            "name": dataset.name,
+            "rows": len(data),
+            "columns": list(df.columns),
+            "data": data,
+            "total_rows": dataset.row_count,
+            "total_columns": dataset.column_count
+        }
+    except Exception as e:
+        logger.error(f"Error reading dataset: {str(e)}")
+        raise HTTPException(500, f"Error reading file: {str(e)}")
+
+
+# ============================================================================
+# GET DATASET QUALITY - Returns data quality metrics
+# ============================================================================
+
+@router.get("/{dataset_id}/quality", summary="Get dataset quality metrics")
+def get_dataset_quality(
     dataset_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -229,10 +285,16 @@ def get_dataset_profile(
     return {
         "id": dataset.id,
         "name": dataset.name,
+        "file_name": dataset.file_name,
+        "file_size": len(dataset.file_content) if dataset.file_content else 0,
         "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
         "quality_score": dataset.quality_score,
+        "missing_values_pct": dataset.missing_values_pct or 0,
+        "duplicate_rows_pct": dataset.duplicate_rows_pct or 0,
         "schema": dataset.columns_info,
-        "last_updated": dataset.updated_at.isoformat()
+        "status": dataset.status,
+        "updated_at": dataset.updated_at.isoformat()
     }
 
 
@@ -284,7 +346,6 @@ def _infer_schema(file_content: bytes, file_format: str) -> tuple:
         else:
             raise ValueError(f"Unsupported format: {file_format}")
         
-        # Build schema
         schema = []
         for col in df.columns:
             col_type = str(df[col].dtype)
@@ -308,7 +369,6 @@ def _infer_schema(file_content: bytes, file_format: str) -> tuple:
                 "nullable": bool(df[col].isnull().any())
             })
         
-        # Calculate quality
         total_cells = df.shape[0] * df.shape[1]
         missing_cells = df.isnull().sum().sum()
         quality_score = 100 * (1 - missing_cells / max(total_cells, 1))
