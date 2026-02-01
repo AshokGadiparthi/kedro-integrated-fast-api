@@ -39,61 +39,67 @@ async def list_datasets(db: Session = Depends(get_db)):
 
 from fastapi import APIRouter, Depends, Path, UploadFile, File, Form
 
-@router.post("/", response_model=None)
+@router.post("/")
 async def create_dataset(
-    file: UploadFile = File(None),
     name: str = Form(None),
     project_id: str = Form(None),
     description: str = Form(None),
+    file: UploadFile = File(None),
     db: Session = Depends(get_db)
 ):
-    """Create new dataset with file upload"""
+    """Create dataset with file upload - SIMPLE"""
     
-    try:
-        # Create dataset
-        new_dataset = Dataset(
-            id=str(uuid4()),
-            name=name or "dataset",
-            project_id=project_id,
-            description=description or "",
-            file_name="data.csv",
-            file_size_bytes=0,
-            created_at=datetime.now()
-        )
-        db.add(new_dataset)
-        db.flush()
-        
-        # Save file if provided
-        if file:
+    # Create dataset record
+    dataset_id = str(uuid4())
+    new_dataset = Dataset(
+        id=dataset_id,
+        name=name or "dataset",
+        project_id=project_id,
+        description=description or "",
+        file_name="data.csv",
+        file_size_bytes=0,
+        created_at=datetime.now()
+    )
+    db.add(new_dataset)
+    db.flush()
+    
+    # SAVE FILE IF PROVIDED
+    if file:
+        try:
             contents = await file.read()
-            file_path = f"{UPLOAD_DIR}/{new_dataset.id}.csv"
+            
+            # Save to disk
+            file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
             with open(file_path, "wb") as f:
                 f.write(contents)
+            print(f"✅ File saved to: {file_path}")
             
+            # Load into cache
             try:
-                df = pd.read_csv(io.BytesIO(contents))
-                dataset_cache[new_dataset.id] = df
-            except:
-                pass
+                df = pd.read_csv(file_path)
+                dataset_cache[dataset_id] = df
+                print(f"✅ Cached {len(df)} rows x {len(df.columns)} cols")
+            except Exception as e:
+                print(f"⚠️ CSV parse error: {e}")
             
+            # Update record
             new_dataset.file_name = file.filename
             new_dataset.file_size_bytes = len(contents)
-        
-        db.commit()
-        db.refresh(new_dataset)
-        
-        return {
-            "id": new_dataset.id,
-            "name": new_dataset.name,
-            "project_id": new_dataset.project_id,
-            "description": new_dataset.description,
-            "file_name": new_dataset.file_name,
-            "file_size_bytes": new_dataset.file_size_bytes,
-            "created_at": new_dataset.created_at.isoformat()
-        }
-    except Exception as e:
-        db.rollback()
-        return {"error": str(e)}
+        except Exception as e:
+            print(f"❌ File save error: {e}")
+    
+    db.commit()
+    db.refresh(new_dataset)
+    
+    return {
+        "id": new_dataset.id,
+        "name": new_dataset.name,
+        "project_id": new_dataset.project_id,
+        "description": new_dataset.description,
+        "file_name": new_dataset.file_name,
+        "file_size_bytes": new_dataset.file_size_bytes,
+        "created_at": new_dataset.created_at.isoformat()
+    }
 
 @router.post("/{dataset_id}/upload")
 async def upload_dataset_file(dataset_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
