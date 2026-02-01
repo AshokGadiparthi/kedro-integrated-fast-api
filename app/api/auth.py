@@ -98,7 +98,7 @@ def register(
     db_user = User(
         email=user_data.email,
         username=user_data.username,
-        hashed_password=hash_password(user_data.password),
+        password_hash=hash_password(user_data.password),
         full_name=user_data.full_name
     )
     
