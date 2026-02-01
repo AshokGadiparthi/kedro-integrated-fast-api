@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Path, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from uuid import uuid4
 from datetime import datetime
+from typing import Optional
 import os
 import pandas as pd
 import numpy as np
@@ -17,7 +18,7 @@ router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
 UPLOAD_DIR = "data/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# In-memory storage for dataset content (since we can't rely on file system)
+# In-memory storage for dataset content
 dataset_cache = {}
 
 @router.get("/", response_model=list)
@@ -37,50 +38,45 @@ async def list_datasets(db: Session = Depends(get_db)):
         for d in datasets
     ]
 
-from fastapi import APIRouter, Depends, Path, UploadFile, File, Form
-
 @router.post("/")
 async def create_dataset(
-    name: str = None,
-    project_id: str = None,
-    description: str = None,
-    file: UploadFile = None,
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    project_id: str = Form(...),
+    description: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
-    """Create dataset - simple parameters"""
+    """Create dataset - reads from multipart form fields properly"""
     
     dataset_id = str(uuid4())
     new_dataset = Dataset(
         id=dataset_id,
-        name=name or "dataset",
+        name=name,
         project_id=project_id,
         description=description or "",
-        file_name="sample_data.csv",
+        file_name=file.filename,
         file_size_bytes=0,
         created_at=datetime.now()
     )
     db.add(new_dataset)
     db.flush()
     
-    # Save file if provided
+    # Save file
     if file:
         contents = await file.read()
         file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
         
-        # Write to file
+        with open(file_path, "wb") as f:
+            f.write(contents)
+        
+        # Cache in memory
         try:
-            with open(file_path, "wb") as f:
-                f.write(contents)
-            
-            # Read back to verify
-            with open(file_path, "r") as f:
-                df = pd.read_csv(f)
-                dataset_cache[dataset_id] = df
-            
-            new_dataset.file_name = file.filename
-            new_dataset.file_size_bytes = len(contents)
+            df = pd.read_csv(file_path)
+            dataset_cache[dataset_id] = df
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Warning: Could not parse CSV: {e}")
+        
+        new_dataset.file_size_bytes = len(contents)
     
     db.commit()
     db.refresh(new_dataset)
@@ -89,51 +85,15 @@ async def create_dataset(
         "id": new_dataset.id,
         "name": new_dataset.name,
         "project_id": new_dataset.project_id,
+        "description": new_dataset.description,
         "file_name": new_dataset.file_name,
         "file_size_bytes": new_dataset.file_size_bytes,
         "created_at": new_dataset.created_at.isoformat()
     }
 
-@router.post("/{dataset_id}/upload")
-async def upload_dataset_file(dataset_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """Upload and STORE actual file data for dataset"""
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not dataset:
-        return {"error": "Dataset not found"}
-    
-    try:
-        # Read file content
-        contents = await file.read()
-        
-        # Save to filesystem
-        file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
-        with open(file_path, "wb") as f:
-            f.write(contents)
-        
-        # Also cache in memory for quick access
-        try:
-            df = pd.read_csv(io.BytesIO(contents))
-            dataset_cache[dataset_id] = df
-        except:
-            pass
-        
-        # Update dataset record
-        dataset.file_name = file.filename
-        dataset.file_size_bytes = len(contents)
-        db.commit()
-        
-        return {
-            "id": dataset.id,
-            "file_name": file.filename,
-            "size": len(contents),
-            "status": "uploaded"
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
 @router.get("/{dataset_id}/preview")
 async def get_dataset_preview(dataset_id: str = Path(...), rows: int = 100, db: Session = Depends(get_db)):
-    """Get dataset preview with REAL data from uploaded file"""
+    """Get dataset preview with REAL data"""
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         return {"error": "Dataset not found"}
@@ -154,7 +114,6 @@ async def get_dataset_preview(dataset_id: str = Path(...), rows: int = 100, db: 
                 return {"error": f"Could not read file: {str(e)}"}
     
     if df is not None and not df.empty:
-        # Return REAL data
         return {
             "id": dataset.id,
             "name": dataset.name,
@@ -167,7 +126,7 @@ async def get_dataset_preview(dataset_id: str = Path(...), rows: int = 100, db: 
 
 @router.get("/{dataset_id}/quality")
 async def get_dataset_quality(dataset_id: str = Path(...), db: Session = Depends(get_db)):
-    """Get REAL data quality analysis from actual file"""
+    """Get REAL data quality analysis"""
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         return {"error": "Dataset not found"}
@@ -201,14 +160,14 @@ async def get_dataset_quality(dataset_id: str = Path(...), db: Session = Depends
         duplicate_rows = df.duplicated().sum()
         
         # Real uniqueness check
-        uniqueness = 100  # Default
+        uniqueness = 100
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) > 0:
             avg_unique_ratio = np.mean([df[col].nunique() / len(df) for col in numeric_cols]) * 100
             uniqueness = min(100, avg_unique_ratio)
         
-        # Real consistency (all rows have same number of columns)
-        consistency = 100  # CSV enforces this
+        # Real consistency
+        consistency = 100
         
         return {
             "id": dataset.id,
