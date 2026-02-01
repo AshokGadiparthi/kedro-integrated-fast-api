@@ -1,421 +1,435 @@
 """
-Phase 2: Advanced Statistics with Visualizations
-Extends UniversalEDAAnalyzer with:
-- Histogram data (binning)
-- Outlier detection
-- Normality tests (Shapiro-Wilk)
-- Distribution analysis
+Phase 2: Advanced Statistics & Visualizations
+Fixed version with proper JSON serialization
 """
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 from scipy import stats
-import logging
-from typing import Dict, Any, List, Tuple
+import warnings
 
-logger = logging.getLogger(__name__)
+warnings.filterwarnings('ignore')
 
 
 class Phase2StatisticsExtended:
-    """
-    Extended statistics for Phase 2 - Visualization ready!
-    """
-    
+    """Advanced statistical analysis for Phase 2 EDA"""
+
     def __init__(self, df: pd.DataFrame):
+        """
+        Initialize Phase 2 statistics analyzer
+
+        Args:
+            df: pandas DataFrame to analyze
+        """
         self.df = df
         self.numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        self.categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
-    
-    # =========================================================================
-    # HISTOGRAMS - For Visualization
-    # =========================================================================
-    
-    def get_histograms(self, bins: int = 10) -> Dict[str, Any]:
+        self.categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+
+    def get_histograms(self, bins: int = 15) -> dict:
         """
         Generate histogram data for numeric columns
-        Returns data ready for Plotly/Recharts visualization
+
+        Args:
+            bins: number of histogram bins (default: 15)
+
+        Returns:
+            dict with histogram data for each numeric column
         """
-        histograms = {}
-        
-        for col in self.numeric_cols:
-            col_data = self.df[col].dropna()
-            
-            if len(col_data) == 0:
-                continue
-            
-            try:
-                # Create histogram data
-                counts, bin_edges = np.histogram(col_data, bins=bins)
-                
-                # Create bin labels
-                bin_labels = []
-                for i in range(len(bin_edges) - 1):
-                    start = round(bin_edges[i], 2)
-                    end = round(bin_edges[i + 1], 2)
-                    bin_labels.append(f"{start}-{end}")
-                
-                histograms[col] = {
-                    "column": col,
-                    "bins": bin_labels,
-                    "frequencies": [int(c) for c in counts],
-                    "bin_edges": [float(e) for e in bin_edges],
-                    "total_count": int(len(col_data)),
-                    "missing_count": int(col_data.isna().sum()),
-                    "statistics": {
-                        "mean": float(col_data.mean()),
-                        "median": float(col_data.median()),
-                        "std": float(col_data.std()),
-                        "min": float(col_data.min()),
-                        "max": float(col_data.max()),
-                        "q1": float(col_data.quantile(0.25)),
-                        "q3": float(col_data.quantile(0.75))
+        try:
+            histograms = {}
+
+            for col in self.numeric_cols:
+                try:
+                    data = self.df[col].dropna()
+
+                    if len(data) == 0:
+                        continue
+
+                    # Create histogram
+                    counts, bin_edges = np.histogram(data, bins=bins)
+
+                    # Create bin labels
+                    bin_labels = [
+                        f"{bin_edges[i]:.2f}-{bin_edges[i+1]:.2f}"
+                        for i in range(len(bin_edges)-1)
+                    ]
+
+                    # Statistics
+                    stats_dict = {
+                        "mean": float(np.mean(data)),
+                        "median": float(np.median(data)),
+                        "std": float(np.std(data)),
+                        "min": float(np.min(data)),
+                        "max": float(np.max(data)),
+                        "q1": float(np.percentile(data, 25)),
+                        "q3": float(np.percentile(data, 75))
                     }
-                }
-            except Exception as e:
-                logger.warning(f"Failed to generate histogram for {col}: {str(e)}")
-                continue
-        
-        return {
-            "dataset_id": None,  # Will be set by endpoint
-            "histograms": histograms,
-            "total_numeric_columns": len(self.numeric_cols),
-            "successfully_generated": len(histograms)
-        }
-    
-    # =========================================================================
-    # OUTLIERS - IQR Method
-    # =========================================================================
-    
-    def get_outliers(self) -> Dict[str, Any]:
-        """
-        Detect outliers using IQR method (Interquartile Range)
-        """
-        outliers_data = {}
-        
-        for col in self.numeric_cols:
-            col_data = self.df[col].dropna()
-            
-            if len(col_data) < 4:  # Need at least 4 values for IQR
-                continue
-            
-            try:
-                Q1 = col_data.quantile(0.25)
-                Q3 = col_data.quantile(0.75)
-                IQR = Q3 - Q1
-                
-                # Define outlier bounds
-                lower_bound = Q1 - 1.5 * IQR
-                upper_bound = Q3 + 1.5 * IQR
-                
-                # Find outliers
-                outlier_mask = (col_data < lower_bound) | (col_data > upper_bound)
-                outlier_values = col_data[outlier_mask]
-                
-                outliers_data[col] = {
-                    "column": col,
-                    "lower_bound": float(lower_bound),
-                    "upper_bound": float(upper_bound),
-                    "IQR": float(IQR),
-                    "outlier_count": int(len(outlier_values)),
-                    "outlier_percentage": round(len(outlier_values) / len(col_data) * 100, 2),
-                    "outlier_indices": [int(i) for i in col_data[outlier_mask].index.tolist()[:100]],  # First 100
-                    "min_outlier": float(outlier_values.min()) if len(outlier_values) > 0 else None,
-                    "max_outlier": float(outlier_values.max()) if len(outlier_values) > 0 else None,
-                    "statistics": {
-                        "mean": float(col_data.mean()),
-                        "median": float(col_data.median()),
-                        "q1": float(Q1),
-                        "q3": float(Q3)
+
+                    histograms[col] = {
+                        "column": col,
+                        "bins": bin_labels,
+                        "frequencies": [int(count) for count in counts],
+                        "bin_edges": [float(edge) for edge in bin_edges],
+                        "total_count": int(len(self.df[col])),
+                        "missing_count": int(self.df[col].isna().sum()),
+                        "statistics": stats_dict
                     }
-                }
-            except Exception as e:
-                logger.warning(f"Failed to detect outliers for {col}: {str(e)}")
-                continue
-        
-        return {
-            "dataset_id": None,
-            "outliers": outliers_data,
-            "total_numeric_columns": len(self.numeric_cols),
-            "columns_with_outliers": len([c for c in outliers_data if outliers_data[c]["outlier_count"] > 0]),
-            "method": "IQR (Interquartile Range)"
-        }
-    
-    # =========================================================================
-    # NORMALITY TESTS - Shapiro-Wilk Test
-    # =========================================================================
-    
-    def get_normality_tests(self) -> Dict[str, Any]:
+                except Exception as e:
+                    print(f"Warning: Could not process histogram for {col}: {str(e)}")
+                    continue
+
+            return {
+                "histograms": histograms,
+                "total_numeric_columns": len(self.numeric_cols),
+                "successfully_generated": len(histograms)
+            }
+
+        except Exception as e:
+            raise Exception(f"Error generating histograms: {str(e)}")
+
+    def get_outliers(self) -> dict:
+        """
+        Detect outliers using IQR method
+
+        Returns:
+            dict with outlier information for each numeric column
+        """
+        try:
+            outliers_dict = {}
+            columns_with_outliers = 0
+
+            for col in self.numeric_cols:
+                try:
+                    data = self.df[col].dropna()
+
+                    if len(data) < 4:  # Need at least 4 values for IQR
+                        continue
+
+                    Q1 = np.percentile(data, 25)
+                    Q3 = np.percentile(data, 75)
+                    IQR = Q3 - Q1
+
+                    lower_bound = Q1 - 1.5 * IQR
+                    upper_bound = Q3 + 1.5 * IQR
+
+                    outlier_mask = (data < lower_bound) | (data > upper_bound)
+                    outlier_indices = data[outlier_mask].index.tolist()
+                    outlier_values = data[outlier_mask].values
+
+                    outlier_count = len(outlier_indices)
+                    outlier_percentage = (outlier_count / len(data)) * 100 if len(data) > 0 else 0
+
+                    if outlier_count > 0:
+                        columns_with_outliers += 1
+
+                    outliers_dict[col] = {
+                        "column": col,
+                        "lower_bound": float(lower_bound),
+                        "upper_bound": float(upper_bound),
+                        "IQR": float(IQR),
+                        "outlier_count": int(outlier_count),
+                        "outlier_percentage": float(outlier_percentage),
+                        "outlier_indices": [int(idx) for idx in outlier_indices],
+                        "min_outlier": float(np.min(outlier_values)) if len(outlier_values) > 0 else None,
+                        "max_outlier": float(np.max(outlier_values)) if len(outlier_values) > 0 else None,
+                        "statistics": {
+                            "mean": float(np.mean(data)),
+                            "median": float(np.median(data)),
+                            "q1": float(Q1),
+                            "q3": float(Q3)
+                        }
+                    }
+                except Exception as e:
+                    print(f"Warning: Could not detect outliers for {col}: {str(e)}")
+                    continue
+
+            return {
+                "outliers": outliers_dict,
+                "total_numeric_columns": len(self.numeric_cols),
+                "columns_with_outliers": columns_with_outliers,
+                "method": "IQR (Interquartile Range)"
+            }
+
+        except Exception as e:
+            raise Exception(f"Error detecting outliers: {str(e)}")
+
+    def get_normality_tests(self) -> dict:
         """
         Test normality using Shapiro-Wilk test
-        p-value > 0.05 means data is approximately normal
+
+        Returns:
+            dict with normality test results for each numeric column
         """
-        normality_tests = {}
-        
-        for col in self.numeric_cols:
-            col_data = self.df[col].dropna()
-            
-            # Shapiro-Wilk test works best with 3-5000 samples
-            if len(col_data) < 3 or len(col_data) > 5000:
-                # For very large or very small samples, use a sample
-                if len(col_data) > 5000:
-                    col_data = col_data.sample(n=5000, random_state=42)
-                elif len(col_data) < 3:
+        try:
+            normality_dict = {}
+            normal_count = 0
+
+            for col in self.numeric_cols:
+                try:
+                    data = self.df[col].dropna()
+
+                    if len(data) < 3:  # Shapiro-Wilk requires at least 3 samples
+                        continue
+
+                    # Perform Shapiro-Wilk test
+                    statistic, p_value = stats.shapiro(data)
+
+                    # Calculate skewness and kurtosis
+                    skewness = float(stats.skew(data))
+                    kurtosis = float(stats.kurtosis(data))
+
+                    # Determine if normal (p > 0.05)
+                    is_normal = bool(p_value > 0.05)
+
+                    if is_normal:
+                        normal_count += 1
+
+                    # Interpretation
+                    if is_normal:
+                        interpretation = "Approximately normal"
+                    else:
+                        interpretation = "Not normally distributed"
+
+                    normality_dict[col] = {
+                        "column": col,
+                        "test": "Shapiro-Wilk",
+                        "statistic": float(statistic),
+                        "p_value": float(p_value),
+                        "is_normal": int(is_normal),  # Convert to int for JSON
+                        "interpretation": interpretation,
+                        "skewness": skewness,
+                        "kurtosis": kurtosis,
+                        "sample_size": int(len(data))
+                    }
+                except Exception as e:
+                    print(f"Warning: Could not test normality for {col}: {str(e)}")
                     continue
-            
-            try:
-                # Shapiro-Wilk test
-                stat, p_value = stats.shapiro(col_data)
-                
-                # Interpretation
-                is_normal = p_value > 0.05
-                
-                # Calculate skewness and kurtosis
-                skewness = float(col_data.skew())
-                kurtosis = float(col_data.kurtosis())
-                
-                normality_tests[col] = {
-                    "column": col,
-                    "test": "Shapiro-Wilk",
-                    "statistic": float(stat),
-                    "p_value": float(p_value),
-                    "is_normal": bool(is_normal),
-                    "interpretation": "Approximately normal" if is_normal else "Not normally distributed",
-                    "skewness": skewness,
-                    "kurtosis": kurtosis,
-                    "sample_size": int(len(col_data))
-                }
-            except Exception as e:
-                logger.warning(f"Failed normality test for {col}: {str(e)}")
-                continue
-        
-        return {
-            "dataset_id": None,
-            "normality_tests": normality_tests,
-            "total_numeric_columns": len(self.numeric_cols),
-            "normal_columns": len([c for c in normality_tests if normality_tests[c]["is_normal"]]),
-            "non_normal_columns": len([c for c in normality_tests if not normality_tests[c]["is_normal"]])
-        }
-    
-    # =========================================================================
-    # DISTRIBUTION TYPES - Detect Distribution Shape
-    # =========================================================================
-    
-    def get_distribution_analysis(self) -> Dict[str, Any]:
+
+            non_normal_count = len(normality_dict) - normal_count
+
+            return {
+                "normality_tests": normality_dict,
+                "total_numeric_columns": len(self.numeric_cols),
+                "normal_columns": normal_count,
+                "non_normal_columns": non_normal_count
+            }
+
+        except Exception as e:
+            raise Exception(f"Error running normality tests: {str(e)}")
+
+    def get_distribution_analysis(self) -> dict:
         """
         Analyze distribution characteristics
+
+        Returns:
+            dict with distribution analysis for each numeric column
         """
-        distributions = {}
-        
-        for col in self.numeric_cols:
-            col_data = self.df[col].dropna()
-            
-            if len(col_data) < 10:
-                continue
-            
-            try:
-                skewness = col_data.skew()
-                kurt = col_data.kurtosis()
-                
-                # Determine distribution type
-                if abs(skewness) < 0.5:
-                    dist_type = "Approximately Symmetric"
-                elif skewness > 0.5:
-                    dist_type = "Right-skewed (Positive skew)"
-                else:
-                    dist_type = "Left-skewed (Negative skew)"
-                
-                # Kurtosis interpretation
-                if abs(kurt) < 0.5:
-                    kurtosis_type = "Mesokurtic (normal-like)"
-                elif kurt > 0.5:
-                    kurtosis_type = "Leptokurtic (heavy tails)"
-                else:
-                    kurtosis_type = "Platykurtic (light tails)"
-                
-                distributions[col] = {
-                    "column": col,
-                    "skewness": float(skewness),
-                    "kurtosis": float(kurt),
-                    "distribution_type": dist_type,
-                    "kurtosis_type": kurtosis_type,
-                    "characteristics": [
-                        f"Skewness: {dist_type}",
-                        f"Kurtosis: {kurtosis_type}",
-                        f"Range: {float(col_data.max() - col_data.min()):.2f}",
-                        f"CV: {float(col_data.std() / col_data.mean() * 100):.2f}%"
-                    ]
-                }
-            except Exception as e:
-                logger.warning(f"Failed distribution analysis for {col}: {str(e)}")
-                continue
-        
-        return {
-            "dataset_id": None,
-            "distributions": distributions,
-            "total_numeric_columns": len(self.numeric_cols),
-            "analyzed_columns": len(distributions)
-        }
-    
-    # =========================================================================
-    # CATEGORICAL DISTRIBUTIONS
-    # =========================================================================
-    
-    def get_categorical_distributions(self, top_n: int = 10) -> Dict[str, Any]:
-        """
-        Get distribution of categorical columns
-        """
-        categorical_dists = {}
-        
-        for col in self.categorical_cols:
-            value_counts = self.df[col].value_counts()
-            
-            categorical_dists[col] = {
-                "column": col,
-                "unique_values": int(self.df[col].nunique()),
-                "top_values": {},
-                "total_rows": int(len(self.df)),
-                "missing_count": int(self.df[col].isna().sum())
-            }
-            
-            # Get top N values
-            for value, count in value_counts.head(top_n).items():
-                percentage = round(count / len(self.df) * 100, 2)
-                categorical_dists[col]["top_values"][str(value)] = {
-                    "count": int(count),
-                    "percentage": percentage
-                }
-        
-        return {
-            "dataset_id": None,
-            "categorical_distributions": categorical_dists,
-            "total_categorical_columns": len(self.categorical_cols),
-            "analyzed_columns": len(categorical_dists)
-        }
-    
-    # =========================================================================
-    # CORRELATION ANALYSIS (Enhanced)
-    # =========================================================================
-    
-    def get_enhanced_correlations(self, threshold: float = 0.3) -> Dict[str, Any]:
-        """
-        Enhanced correlation analysis with p-values
-        """
-        if len(self.numeric_cols) < 2:
-            return {
-                "dataset_id": None,
-                "correlations": {},
-                "high_correlations": [],
-                "message": "Need at least 2 numeric columns"
-            }
-        
-        numeric_df = self.df[self.numeric_cols]
-        correlations = {}
-        high_correlations = []
-        
         try:
-            # Pearson correlation
-            corr_matrix = numeric_df.corr(method='pearson')
-            
-            # Calculate p-values using scipy
-            for i, col1 in enumerate(corr_matrix.columns):
-                for j, col2 in enumerate(corr_matrix.columns):
-                    if i < j:  # Avoid duplicates
-                        corr_val = float(corr_matrix.loc[col1, col2])
-                        
-                        # Calculate p-value
-                        try:
-                            _, p_value = stats.pearsonr(
-                                numeric_df[col1].dropna(),
-                                numeric_df[col2].dropna()
-                            )
-                        except:
-                            p_value = np.nan
-                        
-                        key = f"{col1}-{col2}"
-                        correlations[key] = {
-                            "correlation": round(corr_val, 4),
-                            "p_value": round(p_value, 4) if not np.isnan(p_value) else None,
-                            "significant": p_value < 0.05 if not np.isnan(p_value) else False,
-                            "strength": self._correlation_strength(corr_val)
-                        }
-                        
-                        # Collect high correlations
-                        if abs(corr_val) > threshold:
-                            high_correlations.append({
-                                "column1": col1,
-                                "column2": col2,
-                                "correlation": round(corr_val, 4),
-                                "p_value": round(p_value, 4) if not np.isnan(p_value) else None,
-                                "strength": self._correlation_strength(corr_val)
-                            })
+            distributions = {}
+
+            for col in self.numeric_cols:
+                try:
+                    data = self.df[col].dropna()
+
+                    if len(data) < 2:
+                        continue
+
+                    # Calculate skewness and kurtosis
+                    skewness = float(stats.skew(data))
+                    kurtosis = float(stats.kurtosis(data))
+
+                    # Determine skewness type
+                    if abs(skewness) < 0.5:
+                        skewness_type = "Approximately Symmetric"
+                    elif skewness > 0:
+                        skewness_type = "Right-skewed (Positive skew)"
+                    else:
+                        skewness_type = "Left-skewed (Negative skew)"
+
+                    # Determine kurtosis type
+                    if abs(kurtosis) < 0.5:
+                        kurtosis_type = "Mesokurtic (normal-like)"
+                    elif kurtosis > 0:
+                        kurtosis_type = "Leptokurtic (heavy tails)"
+                    else:
+                        kurtosis_type = "Platykurtic (light tails)"
+
+                    # Calculate range and coefficient of variation
+                    data_range = float(np.max(data) - np.min(data))
+                    mean = float(np.mean(data))
+                    std = float(np.std(data))
+                    cv = (std / mean * 100) if mean != 0 else 0
+
+                    distributions[col] = {
+                        "column": col,
+                        "skewness": skewness,
+                        "kurtosis": kurtosis,
+                        "distribution_type": skewness_type,
+                        "kurtosis_type": kurtosis_type,
+                        "characteristics": [
+                            f"Skewness: {skewness_type}",
+                            f"Kurtosis: {kurtosis_type}",
+                            f"Range: {data_range:.2f}",
+                            f"CV: {cv:.2f}%"
+                        ]
+                    }
+                except Exception as e:
+                    print(f"Warning: Could not analyze distribution for {col}: {str(e)}")
+                    continue
+
+            return {
+                "distributions": distributions,
+                "total_numeric_columns": len(self.numeric_cols),
+                "analyzed_columns": len(distributions)
+            }
+
         except Exception as e:
-            logger.warning(f"Failed enhanced correlation analysis: {str(e)}")
-        
-        return {
-            "dataset_id": None,
-            "all_correlations": correlations,
-            "high_correlations": sorted(high_correlations, 
-                                       key=lambda x: abs(x['correlation']), 
-                                       reverse=True),
-            "threshold": threshold,
-            "total_correlations": len(correlations),
-            "high_correlation_count": len(high_correlations)
-        }
-    
-    @staticmethod
-    def _correlation_strength(corr_val: float) -> str:
-        """Determine correlation strength"""
-        abs_corr = abs(corr_val)
-        if abs_corr >= 0.8:
-            return "Very Strong"
-        elif abs_corr >= 0.6:
-            return "Strong"
-        elif abs_corr >= 0.4:
-            return "Moderate"
-        elif abs_corr >= 0.2:
-            return "Weak"
-        else:
-            return "Very Weak"
+            raise Exception(f"Error analyzing distributions: {str(e)}")
 
+    def get_categorical_distributions(self, top_n: int = 10) -> dict:
+        """
+        Get categorical value distributions
 
-# Example usage
-if __name__ == "__main__":
-    df = pd.read_csv('/mnt/user-data/uploads/ecommerce_orders_dataset.csv')
-    
-    phase2 = Phase2StatisticsExtended(df)
-    
-    print("=" * 80)
-    print("PHASE 2: EXTENDED STATISTICS")
-    print("=" * 80)
-    
-    # Histograms
-    print("\n📊 HISTOGRAMS")
-    histograms = phase2.get_histograms(bins=15)
-    print(f"Generated {histograms['successfully_generated']} histograms")
-    
-    # Outliers
-    print("\n🔍 OUTLIERS")
-    outliers = phase2.get_outliers()
-    for col, data in list(outliers['outliers'].items())[:3]:
-        print(f"{col}: {data['outlier_count']} outliers ({data['outlier_percentage']}%)")
-    
-    # Normality
-    print("\n📈 NORMALITY TESTS")
-    normality = phase2.get_normality_tests()
-    print(f"Normal columns: {normality['normal_columns']}")
-    print(f"Non-normal columns: {normality['non_normal_columns']}")
-    
-    # Distributions
-    print("\n🎯 DISTRIBUTION ANALYSIS")
-    distributions = phase2.get_distribution_analysis()
-    print(f"Analyzed {distributions['analyzed_columns']} distributions")
-    
-    # Categorical
-    print("\n📋 CATEGORICAL DISTRIBUTIONS")
-    categorical = phase2.get_categorical_distributions()
-    print(f"Analyzed {categorical['analyzed_columns']} categorical columns")
-    
-    # Enhanced correlations
-    print("\n🔗 ENHANCED CORRELATIONS")
-    corr = phase2.get_enhanced_correlations()
-    print(f"Found {corr['high_correlation_count']} high correlations")
+        Args:
+            top_n: number of top categories to return
+
+        Returns:
+            dict with category distributions
+        """
+        try:
+            categorical_dict = {}
+
+            for col in self.categorical_cols:
+                try:
+                    value_counts = self.df[col].value_counts(dropna=False)
+                    total_rows = len(self.df)
+
+                    # Get top N values
+                    top_values_dict = {}
+                    for value, count in value_counts.head(top_n).items():
+                        percentage = (count / total_rows) * 100
+                        top_values_dict[str(value)] = {
+                            "count": int(count),
+                            "percentage": float(percentage)
+                        }
+
+                    categorical_dict[col] = {
+                        "column": col,
+                        "unique_values": int(self.df[col].nunique()),
+                        "total_rows": int(total_rows),
+                        "missing_count": int(self.df[col].isna().sum()),
+                        "top_values": top_values_dict
+                    }
+                except Exception as e:
+                    print(f"Warning: Could not analyze categorical column {col}: {str(e)}")
+                    continue
+
+            return {
+                "categorical_distributions": categorical_dict,
+                "total_categorical_columns": len(self.categorical_cols),
+                "analyzed_columns": len(categorical_dict)
+            }
+
+        except Exception as e:
+            raise Exception(f"Error analyzing categorical data: {str(e)}")
+
+    def get_enhanced_correlations(self, threshold: float = 0.3) -> dict:
+        """
+        Calculate correlations with p-values
+
+        Args:
+            threshold: minimum correlation threshold (default: 0.3)
+
+        Returns:
+            dict with correlation analysis
+        """
+        try:
+            if len(self.numeric_cols) < 2:
+                return {
+                    "all_correlations": {},
+                    "high_correlations": [],
+                    "threshold": threshold,
+                    "total_correlations": 0,
+                    "high_correlation_count": 0
+                }
+
+            # Calculate correlation matrix
+            corr_matrix = self.df[self.numeric_cols].corr()
+
+            all_correlations = {}
+            high_correlations = []
+
+            # Iterate through correlation pairs
+            for i, col1 in enumerate(self.numeric_cols):
+                for j, col2 in enumerate(self.numeric_cols):
+                    if i >= j:  # Skip duplicates and self-correlations
+                        continue
+
+                    correlation = float(corr_matrix.loc[col1, col2])
+
+                    # Calculate p-value
+                    try:
+                        # Get data for both columns
+                        data1 = self.df[col1].dropna()
+                        data2 = self.df[col2].dropna()
+
+                        # Find common indices
+                        common_idx = data1.index.intersection(data2.index)
+
+                        if len(common_idx) > 2:
+                            _, p_value = stats.pearsonr(data1[common_idx], data2[common_idx])
+                        else:
+                            p_value = 1.0
+                    except:
+                        p_value = 1.0
+
+                    p_value = float(p_value)
+
+                    # Determine significance
+                    is_significant = int(p_value < 0.05)  # Convert to int for JSON
+
+                    # Determine strength
+                    abs_corr = abs(correlation)
+                    if abs_corr < 0.3:
+                        strength = "Very Weak"
+                    elif abs_corr < 0.5:
+                        strength = "Weak"
+                    elif abs_corr < 0.7:
+                        strength = "Moderate"
+                    elif abs_corr < 0.9:
+                        strength = "Strong"
+                    else:
+                        strength = "Very Strong"
+
+                    # Store in all correlations
+                    pair_key = f"{col1}-{col2}"
+                    all_correlations[pair_key] = {
+                        "correlation": correlation,
+                        "p_value": p_value,
+                        "significant": is_significant,  # Already int
+                        "strength": strength
+                    }
+
+                    # Add to high correlations if above threshold
+                    if abs_corr >= threshold and is_significant:
+                        high_correlations.append({
+                            "column1": col1,
+                            "column2": col2,
+                            "correlation": correlation,
+                            "p_value": p_value,
+                            "strength": strength
+                        })
+
+            # Sort high correlations by absolute value
+            high_correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
+
+            return {
+                "all_correlations": all_correlations,
+                "high_correlations": high_correlations,
+                "threshold": float(threshold),
+                "total_correlations": len(all_correlations),
+                "high_correlation_count": len(high_correlations)
+            }
+
+        except Exception as e:
+            raise Exception(f"Error analyzing correlations: {str(e)}")
