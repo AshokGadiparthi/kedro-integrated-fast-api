@@ -76,6 +76,35 @@ def get_current_user(
     
     return user
 
+def get_user_id_from_token(request: Request) -> str:
+    """
+    Extract user_id from JWT token using Request object
+    Works for both POST and GET requests
+    """
+    auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
+    
+    if not auth_header:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header"
+        )
+    
+    token = extract_token_from_header(auth_header)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format"
+        )
+    
+    user_id = verify_token(token)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    return user_id
+
 async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
     """Background task to actually run EDA analysis"""
     try:
