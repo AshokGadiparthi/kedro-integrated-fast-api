@@ -18,11 +18,11 @@ class ComponentStatus(BaseModel):
     database: Optional[str] = None
 
 class HealthResponse(BaseModel):
-    """Health check response"""
+    """Health check response - Simple version"""
     status: str
-    timestamp: datetime
-    components: ComponentStatus
+    service: Optional[str] = None
     version: Optional[str] = None
+    timestamp: datetime
 
 # ============================================================================
 # JOB MANAGEMENT
