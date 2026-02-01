@@ -4,7 +4,7 @@ INTEGRATED: Complete exploratory data analysis endpoints
 READY: All endpoints working with existing FastAPI structure
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Header
 from sqlalchemy.orm import Session
 from typing import Optional
 import json
@@ -136,7 +136,7 @@ async def start_eda_analysis(
     dataset_id: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    authorization: Optional[str] = None
+    authorization: Optional[str] = Header(None)
 ):
     """
     ✅ Start EDA Analysis
