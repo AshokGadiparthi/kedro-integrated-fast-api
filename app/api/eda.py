@@ -4,7 +4,7 @@ INTEGRATED: Complete exploratory data analysis endpoints
 READY: All endpoints working with existing FastAPI structure
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Header
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Header, Request
 from sqlalchemy.orm import Session
 from typing import Optional
 import json
@@ -38,7 +38,7 @@ router = APIRouter(prefix="/api/eda", tags=["EDA"])
 # ============================================================================
 
 def get_current_user(
-    authorization: Optional[str] = Header(None),
+    
     db: Session = Depends(get_db)
 ) -> User:
     """
@@ -74,18 +74,21 @@ def get_current_user(
     
     return user
 
-def get_user_id_from_token(authorization: Optional[str] = Header(None)) -> str:
+def get_user_id_from_token(request: Request) -> str:
     """
-    Extract user_id from JWT token WITHOUT database lookup
-    SIMPLE: Just verifies token is valid and returns user_id
+    Extract user_id from JWT token using Request object
+    Works for both POST and GET requests
     """
-    if not authorization:
+    # Get authorization header (case-insensitive)
+    auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
+    
+    if not auth_header:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing Authorization header"
         )
     
-    token = extract_token_from_header(authorization)
+    token = extract_token_from_header(auth_header)
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -159,11 +162,10 @@ async def eda_health_check():
     status_code=status.HTTP_202_ACCEPTED,
     tags=["Analysis"]
 )
-async def start_eda_analysis(
+async def start_eda_analysis(request: Request,
     dataset_id: str,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    authorization: Optional[str] = Header(None)
+    db: Session = Depends(get_db)
 ):
     """
     ✅ Start EDA Analysis
@@ -187,8 +189,8 @@ async def start_eda_analysis(
     try:
         logger.info(f"📊 EDA analysis requested for dataset: {dataset_id}")
         
-        # Get user_id from token (no database lookup needed)
-        user_id = get_user_id_from_token(authorization)
+        # Get user_id from request headers
+        user_id = get_user_id_from_token(request)
         logger.info(f"👤 User authenticated: {user_id}")
         
         # Verify dataset exists
@@ -263,9 +265,8 @@ async def start_eda_analysis(
     status_code=status.HTTP_200_OK,
     tags=["Analysis"]
 )
-async def get_job_status(
+async def get_job_status(request: Request,
     job_id: str,
-    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -287,7 +288,7 @@ async def get_job_status(
         logger.info(f"🔍 Job status requested: {job_id}")
         
         # Verify authorization
-        user_id = get_user_id_from_token(authorization)
+        user_id = get_user_id_from_token(request)
         
         # Get job from cache
         job_data = await cache_manager.get(f"eda:job:{job_id}")
@@ -323,9 +324,9 @@ async def get_job_status(
     status_code=status.HTTP_200_OK,
     tags=["Results"]
 )
-async def get_eda_summary(
+async def get_eda_summary(request: Request,
     dataset_id: str,
-    authorization: Optional[str] = Header(None),
+    
     db: Session = Depends(get_db)
 ):
     """
@@ -349,7 +350,7 @@ async def get_eda_summary(
         logger.info(f"📋 Summary requested for dataset: {dataset_id}")
         
         # Verify authorization
-        user_id = get_user_id_from_token(authorization)
+        user_id = get_user_id_from_token(request)
         
         # Get from cache
         cached = await cache_manager.get(f"eda:summary:{dataset_id}")
@@ -383,9 +384,9 @@ async def get_eda_summary(
     status_code=status.HTTP_200_OK,
     tags=["Results"]
 )
-async def get_statistics(
+async def get_statistics(request: Request,
     dataset_id: str,
-    authorization: Optional[str] = Header(None),
+    
     db: Session = Depends(get_db)
 ):
     """
@@ -418,7 +419,7 @@ async def get_statistics(
         logger.info(f"📊 Statistics requested for dataset: {dataset_id}")
         
         # Verify authorization
-        user_id = get_user_id_from_token(authorization)
+        user_id = get_user_id_from_token(request)
         
         # Get from cache
         cached = await cache_manager.get(f"eda:statistics:{dataset_id}")
@@ -452,9 +453,9 @@ async def get_statistics(
     status_code=status.HTTP_200_OK,
     tags=["Results"]
 )
-async def get_quality_report(
+async def get_quality_report(request: Request,
     dataset_id: str,
-    authorization: Optional[str] = Header(None),
+    
     db: Session = Depends(get_db)
 ):
     """
@@ -480,7 +481,7 @@ async def get_quality_report(
         logger.info(f"🔍 Quality report requested for dataset: {dataset_id}")
         
         # Verify authorization
-        user_id = get_user_id_from_token(authorization)
+        user_id = get_user_id_from_token(request)
         
         # Get from cache
         cached = await cache_manager.get(f"eda:quality_report:{dataset_id}")
@@ -514,10 +515,10 @@ async def get_quality_report(
     status_code=status.HTTP_200_OK,
     tags=["Results"]
 )
-async def get_correlations(
+async def get_correlations(request: Request,
     dataset_id: str,
     threshold: float = 0.3,
-    authorization: Optional[str] = Header(None),
+    
     db: Session = Depends(get_db)
 ):
     """
@@ -546,7 +547,7 @@ async def get_correlations(
         logger.info(f"🔗 Correlations requested for dataset: {dataset_id}")
         
         # Verify authorization
-        user_id = get_user_id_from_token(authorization)
+        user_id = get_user_id_from_token(request)
         
         # Get from cache
         cached = await cache_manager.get(f"eda:correlations:{dataset_id}")
@@ -589,10 +590,10 @@ async def get_correlations(
     status_code=status.HTTP_200_OK,
     tags=["Results"]
 )
-async def get_full_report(
+async def get_full_report(request: Request,
     dataset_id: str,
     format: str = "json",
-    authorization: Optional[str] = Header(None),
+    
     db: Session = Depends(get_db)
 ):
     """
@@ -609,7 +610,7 @@ async def get_full_report(
         logger.info(f"📄 Full report requested for dataset: {dataset_id}")
         
         # Verify authorization
-        user_id = get_user_id_from_token(authorization)
+        user_id = get_user_id_from_token(request)
         
         # Get from cache
         cached = await cache_manager.get(f"eda:report:{dataset_id}:{format}")
