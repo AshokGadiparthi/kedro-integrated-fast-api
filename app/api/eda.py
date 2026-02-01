@@ -12,7 +12,7 @@ from app.core.cache import cache_manager
 from app.models.models import EdaResult
 from app.schemas.eda_schemas import (
     AnalysisRequest, AnalysisResponse, JobStatusResponse, HealthResponse,
-    SummaryResponse, StatisticsResponse, QualityResponse, CorrelationsResponse
+    SummaryResponse, StatisticsSimpleResponse, QualityResponse, CorrelationsResponse
 )
 
 router = APIRouter(prefix="/api/eda", tags=["EDA"])

@@ -206,3 +206,50 @@ class ErrorResponse(BaseModel):
     detail: str
     status_code: int
     timestamp: datetime
+
+# ============================================================================
+# SIMPLIFIED SCHEMAS FOR NEW EDA API
+# ============================================================================
+
+class AnalysisRequest(BaseModel):
+    """Request to start analysis"""
+    dataset_id: str
+
+class AnalysisResponse(BaseModel):
+    """Response when analysis starts"""
+    job_id: str
+    dataset_id: str
+    status: str
+    message: str
+
+class SummaryResponse(BaseModel):
+    """Data summary response"""
+    dataset_id: str
+    shape: List[int]
+    columns: List[str]
+    dtypes: Dict[str, str]
+    memory_usage: str
+
+class StatisticsSimpleResponse(BaseModel):
+    """Simple statistics response"""
+    dataset_id: str
+    basic_stats: Dict[str, Any]
+    missing_values: Dict[str, Any]
+    duplicates: int
+
+class QualityResponse(BaseModel):
+    """Quality report response"""
+    dataset_id: str
+    completeness: float
+    uniqueness: float
+    validity: float
+    consistency: float
+    duplicate_rows: int
+    missing_values_count: int
+    total_cells: int
+
+class CorrelationsResponse(BaseModel):
+    """Correlations response"""
+    dataset_id: str
+    correlations: Dict[str, float]
+    threshold: float
