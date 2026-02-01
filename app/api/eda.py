@@ -38,7 +38,7 @@ router = APIRouter(prefix="/api/eda", tags=["EDA"])
 # ============================================================================
 
 def get_current_user(
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ) -> User:
     """
@@ -265,7 +265,7 @@ async def start_eda_analysis(
 )
 async def get_job_status(
     job_id: str,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -325,7 +325,7 @@ async def get_job_status(
 )
 async def get_eda_summary(
     dataset_id: str,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -385,7 +385,7 @@ async def get_eda_summary(
 )
 async def get_statistics(
     dataset_id: str,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -454,7 +454,7 @@ async def get_statistics(
 )
 async def get_quality_report(
     dataset_id: str,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -517,7 +517,7 @@ async def get_quality_report(
 async def get_correlations(
     dataset_id: str,
     threshold: float = 0.3,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -592,7 +592,7 @@ async def get_correlations(
 async def get_full_report(
     dataset_id: str,
     format: str = "json",
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
