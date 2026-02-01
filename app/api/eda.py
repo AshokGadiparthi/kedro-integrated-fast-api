@@ -100,11 +100,6 @@ def get_user_id_from_token(authorization: Optional[str] = Header(None)) -> str:
         )
     
     return user_id
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    return user
 
 # ============================================================================
 # ENDPOINT 1: HEALTH CHECK
