@@ -227,17 +227,12 @@ class ProjectCreate(BaseModel):
         default=None,
         description="Project description"
     )
-    problem_type: str = Field(
-        default="Classification",
-        description="Type of problem (Classification, Regression, Clustering)"
-    )
     
     class Config:
         json_schema_extra = {
             "example": {
-                "name": "Customer Churn Prediction",
-                "description": "Predict which customers will churn",
-                "problem_type": "Classification"
+                "name": "Data Analysis Project",
+                "description": "Analyzing sales data"
             }
         }
 
@@ -255,17 +250,12 @@ class ProjectUpdate(BaseModel):
         default=None,
         description="New description"
     )
-    status: Optional[str] = Field(
-        default=None,
-        description="Project status (Active, Completed, Archived)"
-    )
     
     class Config:
         json_schema_extra = {
             "example": {
                 "name": "Updated Project Name",
-                "description": "Updated description",
-                "status": "Active"
+                "description": "Updated description"
             }
         }
 
@@ -274,11 +264,10 @@ class ProjectResponse(BaseModel):
     """Project response (sent to frontend)"""
     
     id: str = Field(..., description="Project ID")
-    workspace_id: str = Field(..., description="Workspace ID")
+    owner_id: str = Field(..., description="Owner User ID")
     name: str = Field(..., description="Project name")
     description: Optional[str] = Field(None, description="Description")
-    problem_type: str = Field(..., description="Type of ML problem")
-    status: str = Field(..., description="Project status")
+    is_active: bool = Field(..., description="Is project active")
     created_at: datetime = Field(..., description="Creation date")
     updated_at: datetime = Field(..., description="Last update date")
     
@@ -287,13 +276,12 @@ class ProjectResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440002",
-                "workspace_id": "550e8400-e29b-41d4-a716-446655440000",
-                "name": "Customer Churn Prediction",
-                "description": "Predict which customers will churn",
-                "problem_type": "Classification",
-                "status": "Active",
-                "created_at": "2024-01-31T11:00:00",
-                "updated_at": "2024-01-31T11:00:00"
+                "owner_id": "550e8400-e29b-41d4-a716-446655440000",
+                "name": "Data Analysis Project",
+                "description": "Analyzing sales data",
+                "is_active": True,
+                "created_at": "2024-01-31T10:00:00",
+                "updated_at": "2024-01-31T10:00:00"
             }
         }
 
