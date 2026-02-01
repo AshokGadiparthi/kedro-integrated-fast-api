@@ -179,7 +179,7 @@ def login(
         )
     
     # Verify password
-    if not verify_password(user_data.password, db_user.hashed_password):
+    if not verify_password(user_data.password, db_user.password_hash):
         logger.warning(f"❌ Wrong password for: {user_data.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
