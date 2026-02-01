@@ -41,20 +41,24 @@ from fastapi import APIRouter, Depends, Path, UploadFile, File, Form
 
 @router.post("/", response_model=None)
 async def create_dataset(
-    name: str = Form(...),
-    project_id: str = Form(...), 
-    description: str = Form(None),
     file: UploadFile = File(...),
+    name: str = Form(""),
+    project_id: str = Form(""),
+    description: str = Form(""),
     db: Session = Depends(get_db)
 ):
     """Create new dataset - ACCEPTS FormData with file and metadata"""
     
     try:
-        # Create dataset record with ACTUAL parameters from FormData
+        # Use defaults if empty
+        dataset_name = name if name else "dataset"
+        dataset_project_id = project_id if project_id else None
+        
+        # Create dataset record with parameters from FormData
         new_dataset = Dataset(
             id=str(uuid4()),
-            name=name,  # Use actual name from FormData
-            project_id=project_id,  # Use actual project_id from FormData
+            name=dataset_name,
+            project_id=dataset_project_id,
             description=description,
             file_name=file.filename if file else "data.csv",
             file_size_bytes=0,
@@ -63,7 +67,7 @@ async def create_dataset(
         db.add(new_dataset)
         db.flush()
         
-        # Save file if provided
+        # Save file
         if file and file.filename:
             contents = await file.read()
             
@@ -76,8 +80,9 @@ async def create_dataset(
             try:
                 df = pd.read_csv(io.BytesIO(contents))
                 dataset_cache[new_dataset.id] = df
+                print(f"✅ CSV cached: {len(df)} rows, {len(df.columns)} columns")
             except Exception as e:
-                print(f"Warning: Could not parse CSV: {e}")
+                print(f"⚠️ Could not parse CSV: {e}")
             
             # Update dataset with actual file info
             new_dataset.file_name = file.filename
