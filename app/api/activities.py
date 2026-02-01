@@ -10,9 +10,9 @@ Endpoints:
 - GET    /api/activities/recent/{project_id}      Get recent activities
 """
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import logging
 
 from app.core.database import get_db
@@ -58,110 +58,95 @@ def get_current_user(
 
 
 # ============================================================================
-# LOG ACTIVITY
-# ============================================================================
-
-
-def log_activity(
-    project_id: str,
-    activity_data: ActivityCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Log an activity
-    
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - project_id: The UUID of the project
-    
-    **Request Body:**
-    ```json
-    {
-      "action": "model_trained",
-      "target_type": "model",
-      "target_id": "model-uuid",
-      "description": "Model trained successfully with 92% accuracy"
-    }
-    ```
-    
-    **Response (201 Created):**
-    ```json
-    {
-      "id": "activity-uuid",
-      "project_id": "project-uuid",
-      "action": "model_trained",
-      "target_type": "model",
-      "target_id": "model-uuid",
-      "description": "Model trained successfully with 92% accuracy",
-      "created_at": "2024-01-31T17:00:00"
-    }
-    ```
-    """
-    
-    logger.info(f"📝 Logging activity in project: {project_id}")
-    
-    # Verify project exists
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
-        )
-    
-    # Verify user owns project
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this project"
-        )
-    
-    # Create activity
-    db_activity = Activity(
-        user_id=current_user.id,
-        project_id=project_id,
-        action=activity_data.action,
-        target_type=activity_data.target_type,
-        target_id=activity_data.target_id,
-        description=activity_data.description
-    )
-    
-    db.add(db_activity)
-    db.commit()
-    db.refresh(db_activity)
-    
-    logger.info(f"✅ Activity logged: {activity_data.action}")
-    
-    return {
-        "id": db_activity.id,
-        "project_id": db_activity.project_id,
-        "action": db_activity.action,
-        "target_type": db_activity.target_type,
-        "target_id": db_activity.target_id,
-        "description": db_activity.description,
-        "created_at": db_activity.created_at.isoformat()
-    }
-
-
-# ============================================================================
-# LIST ALL ACTIVITIES
+# LIST ALL ACTIVITIES - WITH QUERY PARAMETER SUPPORT
 # ============================================================================
 
 @router.get(
-    "/{project_id}",
-    summary="List activities",
-    description="Get all activities in a project"
+    "",
+    summary="List activities (all or by project)",
+    description="Get all activities or activities for a specific project using query parameter"
 )
-def list_activities(
-    project_id: str,
+def list_all_activities(
+    project_id: Optional[str] = Query(None, description="Filter by project ID"),
+    limit: int = Query(100, description="Max number of activities to return"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List all activities in project"""
+    """
+    List activities - supports both:
+    - GET /api/activities                    - All user activities
+    - GET /api/activities?project_id=UUID   - Activities for specific project
+    """
+    
+    logger.info(f"📋 Listing activities for user: {current_user.username}")
+    
+    if project_id:
+        # Verify project exists and belongs to user
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+        
+        # Verify user owns this project
+        if project.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this project"
+            )
+        
+        # Get project activities
+        activities = db.query(Activity).filter(
+            Activity.project_id == project_id
+        ).order_by(Activity.created_at.desc()).limit(limit).all()
+        
+        logger.info(f"✅ Found {len(activities)} activities for project: {project_id}")
+    else:
+        # Get all user activities
+        activities = db.query(Activity).filter(
+            Activity.user_id == current_user.id
+        ).order_by(Activity.created_at.desc()).limit(limit).all()
+        
+        logger.info(f"✅ Found {len(activities)} activities for user")
+    
+    # Return as JSON with proper formatting
+    return [
+        {
+            "id": a.id,
+            "user_id": a.user_id,
+            "project_id": a.project_id,
+            "action": a.action,
+            "entity_type": a.entity_type,
+            "entity_id": a.entity_id,
+            "details": a.details,
+            "created_at": a.created_at.isoformat() if a.created_at else None
+        }
+        for a in activities
+    ]
+
+
+# ============================================================================
+# LOG ACTIVITY - REMOVED (Activities are now logged automatically in CRUD operations)
+# ============================================================================
+
+
+# ============================================================================
+# LIST PROJECT ACTIVITIES - PATH PARAMETER (BACKWARD COMPATIBLE)
+# ============================================================================
+
+@router.get(
+    "/project/{project_id}",
+    summary="List project activities",
+    description="Get all activities for a specific project"
+)
+def list_project_activities(
+    project_id: str,
+    limit: int = Query(100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all activities in a project - using path parameter"""
     
     logger.info(f"📋 Listing activities for project: {project_id}")
     
@@ -183,7 +168,7 @@ def list_activities(
     # Get activities
     activities = db.query(Activity).filter(
         Activity.project_id == project_id
-    ).order_by(Activity.created_at.desc()).all()
+    ).order_by(Activity.created_at.desc()).limit(limit).all()
     
     logger.info(f"✅ Found {len(activities)} activities")
     
@@ -191,11 +176,12 @@ def list_activities(
     return [
         {
             "id": a.id,
+            "user_id": a.user_id,
             "project_id": a.project_id,
             "action": a.action,
-            "target_type": a.target_type,
-            "target_id": a.target_id,
-            "description": a.description,
+            "entity_type": a.entity_type,
+            "entity_id": a.entity_id,
+            "details": a.details,
             "created_at": a.created_at.isoformat() if a.created_at else None
         }
         for a in activities
@@ -203,7 +189,7 @@ def list_activities(
 
 
 # ============================================================================
-# GET RECENT ACTIVITIES
+# GET RECENT PROJECT ACTIVITIES
 # ============================================================================
 
 @router.get(
@@ -211,13 +197,13 @@ def list_activities(
     summary="Get recent activities",
     description="Get latest activities in a project"
 )
-def get_recent_activities(
+def get_recent_project_activities(
     project_id: str,
-    limit: int = 10,
+    limit: int = Query(10, description="Number of recent activities to return"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get recent activities (latest first)"""
+    """Get recent activities (latest first) for a project"""
     
     logger.info(f"⏱️  Getting recent activities for project: {project_id}")
     
@@ -247,11 +233,12 @@ def get_recent_activities(
     return [
         {
             "id": a.id,
+            "user_id": a.user_id,
             "project_id": a.project_id,
             "action": a.action,
-            "target_type": a.target_type,
-            "target_id": a.target_id,
-            "description": a.description,
+            "entity_type": a.entity_type,
+            "entity_id": a.entity_id,
+            "details": a.details,
             "created_at": a.created_at.isoformat() if a.created_at else None
         }
         for a in activities
