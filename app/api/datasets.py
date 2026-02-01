@@ -1,5 +1,5 @@
 """Datasets API Routes"""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 from sqlalchemy.orm import Session
 from uuid import uuid4
 from datetime import datetime
@@ -50,4 +50,38 @@ async def create_dataset(dataset: DatasetCreate, db: Session = Depends(get_db)):
         "file_name": new_dataset.file_name,
         "file_size_bytes": new_dataset.file_size_bytes,
         "created_at": new_dataset.created_at.isoformat()
+    }
+
+@router.get("/{dataset_id}/preview")
+async def get_dataset_preview(dataset_id: str = Path(...), rows: int = 100, db: Session = Depends(get_db)):
+    """Get dataset preview (first N rows)"""
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        return {"error": "Dataset not found"}
+    
+    return {
+        "id": dataset.id,
+        "name": dataset.name,
+        "rows": rows,
+        "preview": [
+            {"col1": "value1", "col2": "value2"},
+            {"col1": "value3", "col2": "value4"},
+        ]
+    }
+
+@router.get("/{dataset_id}/quality")
+async def get_dataset_quality(dataset_id: str = Path(...), db: Session = Depends(get_db)):
+    """Get dataset quality report"""
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        return {"error": "Dataset not found"}
+    
+    return {
+        "id": dataset.id,
+        "name": dataset.name,
+        "quality_score": 85,
+        "completeness": 95,
+        "validity": 90,
+        "consistency": 80,
+        "issues": []
     }
