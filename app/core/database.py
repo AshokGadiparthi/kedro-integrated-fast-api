@@ -66,8 +66,20 @@ SessionLocal = sessionmaker(
 # BASE CLASS FOR MODELS
 # ============================================================================
 
+# ⚠️ CRITICAL: This Base instance MUST be used by ALL models
+# Do NOT create another declarative_base() anywhere else!
+# 
+# If models.py creates its own Base instance:
+#   - Base.metadata will be empty
+#   - Tables won't be created
+#   - Database will be created but no tables in it
+#
 # All ORM models inherit from this
 Base = declarative_base()
+
+# 🔒 SAFEGUARD: Verify this Base is registered with models
+# This is checked in main.py and verify_all.py
+# If you see "Base.metadata has 0 tables" - models.py is using wrong Base!
 
 # ============================================================================
 # DEPENDENCY INJECTION

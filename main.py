@@ -43,6 +43,18 @@ try:
     from app.models.models import User, Workspace, Project, Datasource, Dataset, Model, Activity
     print("  ✅ All models imported and registered")
     
+    # 🔒 SAFEGUARD: Verify Base.metadata is not empty
+    print("  → Verifying Base registration...")
+    if len(Base.metadata.tables) == 0:
+        raise RuntimeError(
+            "❌ CRITICAL ERROR: Base.metadata.tables is EMPTY!\n"
+            "This means models.py is using a different Base instance.\n"
+            "Fix: models.py must import Base from app.core.database\n"
+            "     Do NOT do: Base = declarative_base()\n"
+            "Check: app/models/models.py line ~13"
+        )
+    print(f"  ✅ Base registration verified ({len(Base.metadata.tables)} tables)")
+    
     # Step 3: Create all tables
     print("  → Creating database tables...")
     Base.metadata.create_all(bind=engine)

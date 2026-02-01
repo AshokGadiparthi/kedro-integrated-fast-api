@@ -1,11 +1,27 @@
 """
 SQLAlchemy Models - Phase 3
 All models use the SAME Base instance from database.py
+
+⚠️ CRITICAL RULE:
+   - Base MUST be imported from app.core.database
+   - Do NOT create your own Base instance
+   - Do NOT do: Base = declarative_base()
+   
+If you break this rule:
+   - Base.metadata will be empty
+   - No tables will be created
+   - Database will be created but empty
+   - Tests will fail at "Base.metadata has 0 tables"
+
+This is verified in:
+   - main.py (before table creation)
+   - verify_all.py (comprehensive test)
+   - VERIFY_INSTALLATION.md (test 3)
 """
 
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, Float, JSON, ForeignKey, LargeBinary, Table
 from sqlalchemy.orm import relationship
-from app.core.database import Base  # ✅ IMPORT Base from database.py - NOT create our own!
+from app.core.database import Base  # ✅ MUST import from database.py - NOT create own!
 from datetime import datetime
 import uuid
 
