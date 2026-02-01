@@ -114,6 +114,12 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
         
         file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
         
+        # Get the original job data (has dataset_id, created_at, etc.)
+        original_job = await cache_manager.get(f"eda:job:{job_id}")
+        if not original_job:
+            logger.error(f"❌ Original job not found: {job_id}")
+            return
+        
         # Load from cache or file
         if dataset_id in dataset_cache:
             df = dataset_cache[dataset_id]
@@ -121,25 +127,29 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
             df = pd.read_csv(file_path)
             dataset_cache[dataset_id] = df
         else:
-            await cache_manager.set(f"eda:job:{job_id}", {
-                "status": "failed",
-                "error": "Dataset file not found"
-            }, ttl=86400)
+            # Preserve original fields when marking as failed
+            failed_job = {**original_job, "status": "failed", "error": "Dataset file not found", "progress": 0}
+            await cache_manager.set(f"eda:job:{job_id}", failed_job, ttl=86400)
+            logger.error(f"❌ Dataset file not found: {file_path}")
             return
         
-        # Update job status to processing
-        job_data = await cache_manager.get(f"eda:job:{job_id}")
-        if job_data:
-            job_data["status"] = "processing"
-            job_data["current_phase"] = "Data Loading"
-            await cache_manager.set(f"eda:job:{job_id}", job_data, ttl=86400)
+        # Update job status to processing (preserve all fields)
+        processing_job = {
+            **original_job,
+            "status": "processing",
+            "current_phase": "Data Loading",
+            "progress": 25,
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        await cache_manager.set(f"eda:job:{job_id}", processing_job, ttl=86400)
         
         # ✅ ACTUAL EDA ANALYSIS
         analysis_result = {
-            "job_id": job_id,
+            **original_job,  # Preserve all original fields
             "status": "completed",
             "progress": 100,
             "current_phase": "Complete",
+            "updated_at": datetime.utcnow().isoformat(),
             "results": {
                 "shape": list(df.shape),
                 "columns": list(df.columns),
@@ -157,14 +167,30 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
         
     except Exception as e:
         logger.error(f"❌ EDA analysis failed: {str(e)}")
-        await cache_manager.set(f"eda:job:{job_id}", {
-            "job_id": job_id,
-            "status": "failed",
-            "error": str(e),
-            "progress": 0,
-            "current_phase": "Failed",
-            "updated_at": datetime.utcnow().isoformat()
-        }, ttl=86400)
+        # Get original job to preserve required fields
+        original_job = await cache_manager.get(f"eda:job:{job_id}")
+        if original_job:
+            failed_job = {
+                **original_job,
+                "status": "failed",
+                "error": str(e),
+                "progress": 0,
+                "current_phase": "Failed",
+                "updated_at": datetime.utcnow().isoformat()
+            }
+        else:
+            # Fallback if original job lost (shouldn't happen)
+            failed_job = {
+                "job_id": job_id,
+                "dataset_id": dataset_id,
+                "status": "failed",
+                "error": str(e),
+                "progress": 0,
+                "current_phase": "Failed",
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+        await cache_manager.set(f"eda:job:{job_id}", failed_job, ttl=86400)
 
 # ============================================================================
 # ENDPOINT 1: HEALTH CHECK
@@ -368,9 +394,13 @@ async def get_job_status(request: Request,
         
         # job_data is already a dict, add defaults for missing fields
         job = job_data if isinstance(job_data, dict) else json.loads(job_data)
+        
+        # Add defaults for ALL required fields
         job.setdefault("progress", 0)
         job.setdefault("current_phase", "Processing")
         job.setdefault("updated_at", datetime.utcnow().isoformat())
+        job.setdefault("dataset_id", job.get("dataset_id", "unknown"))
+        job.setdefault("created_at", job.get("created_at", datetime.utcnow().isoformat()))
         
         logger.info(f"✅ Job status: {job['status']} (progress: {job.get('progress', 0)}%)")
         
