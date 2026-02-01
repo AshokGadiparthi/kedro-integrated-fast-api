@@ -12,8 +12,7 @@ from app.core.database import engine, Base, init_db
 from app.api import auth, projects, datasets, datasources, models, activities, eda
 # IMPORTANT: Import ALL models so they register with Base for table creation
 from app.models.models import User, Project, Dataset, Activity, Datasource, Model
-from app.api.phase3_correlations_endpoints import router as phase3_router
-app.include_router(phase3_router)
+from app.api.phase3_correlations_endpoints import router as phase3_router  # ✅ ADD THIS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -93,6 +92,8 @@ app.include_router(activities.router)
 
 # EDA routes (NEW)
 app.include_router(eda.router)
+
+app.include_router(phase3_router)           # ✅ Phase 3 Correlations - ADD THIS LINE
 
 # ============================================================================
 # HEALTH CHECK ENDPOINT
