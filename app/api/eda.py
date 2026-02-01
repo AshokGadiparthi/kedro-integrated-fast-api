@@ -1,4 +1,4 @@
-"""EDA API Endpoints - Exploratory Data Analysis"""
+"""EDA API Endpoints - Exploratory Data Analysis (Universal Version)"""
 import json
 import pandas as pd
 import numpy as np
@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.cache import cache_manager
+from app.core.serializer_utils import safe_json_dumps
+from app.core.universal_eda_analyzer import UniversalEDAAnalyzer
 from app.models.models import EdaResult
 from app.schemas.eda_schemas import (
     AnalysisRequest, AnalysisResponse, JobStatusResponse, HealthResponse,
@@ -87,7 +89,22 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
         }
         await cache_manager.set(f"eda:job:{job_id}", processing_job, ttl=86400)
         
-        # ✅ PERFORM ANALYSIS
+        # ✅ UNIVERSAL ANALYSIS (Works with ANY dataset!)
+        analyzer = UniversalEDAAnalyzer(df)
+        
+        summary_data = analyzer.get_summary()
+        summary_data["dataset_id"] = dataset_id  # Set dataset_id
+        
+        statistics_data = analyzer.get_statistics()
+        statistics_data["dataset_id"] = dataset_id  # Set dataset_id
+        
+        quality_data = analyzer.get_quality_report()
+        quality_data["dataset_id"] = dataset_id  # Set dataset_id
+        
+        correlations_data = analyzer.get_correlations()
+        correlations_data["dataset_id"] = dataset_id  # Set dataset_id
+        
+        # Update cache with job results (for polling)
         analysis_result = {
             **original_job,
             "status": "completed",
@@ -95,96 +112,24 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
             "current_phase": "Complete",
             "updated_at": datetime.utcnow().isoformat(),
             "results": {
-                "shape": list(df.shape),
-                "columns": list(df.columns),
-                "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
-                "missing_values": df.isnull().sum().to_dict(),
-                "duplicates": int(df.duplicated().sum()),
-                "basic_stats": df.describe().to_dict(),
-                "memory_usage": f"{df.memory_usage(deep=True).sum() / 1024**2:.2f} MB"
+                "summary": summary_data,
+                "statistics": statistics_data,
+                "quality": quality_data,
+                "correlations": correlations_data
             }
         }
         
-        # Update cache with job results (for polling)
         await cache_manager.set(f"eda:job:{job_id}", analysis_result, ttl=86400)
         
-        # JSON serialization helper
-        def serialize_for_json(obj):
-            if isinstance(obj, dict):
-                return {k: serialize_for_json(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [serialize_for_json(v) for v in obj]
-            elif isinstance(obj, (np.integer, np.floating)):
-                return float(obj) if isinstance(obj, np.floating) else int(obj)
-            elif isinstance(obj, np.ndarray):
-                return obj.tolist()
-            elif pd.isna(obj):
-                return None
-            return obj
-        
-        # Prepare summary
-        summary_data = {
-            "dataset_id": dataset_id,
-            "shape": list(df.shape),
-            "columns": list(df.columns),
-            "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
-            "memory_usage": analysis_result["results"]["memory_usage"]
-        }
-        
-        # Prepare statistics
-        basic_stats_serialized = serialize_for_json(analysis_result["results"]["basic_stats"])
-        missing_values_serialized = serialize_for_json(analysis_result["results"]["missing_values"])
-        statistics_data = {
-            "dataset_id": dataset_id,
-            "basic_stats": basic_stats_serialized,
-            "missing_values": missing_values_serialized,
-            "duplicates": int(analysis_result["results"]["duplicates"])
-        }
-        
-        # Prepare quality metrics
-        total_cells = int(np.prod(df.shape))
-        missing_cells = int(df.isnull().sum().sum())
-        completeness = 100 - (missing_cells / total_cells * 100) if total_cells > 0 else 100
-        unique_ratio = len(df) / max(df.duplicated().sum(), 1) * 100
-        
-        quality_data = {
-            "dataset_id": dataset_id,
-            "completeness": round(float(completeness), 2),
-            "uniqueness": round(float(unique_ratio), 2),
-            "validity": 95.0,
-            "consistency": 98.0,
-            "duplicate_rows": int(df.duplicated().sum()),
-            "missing_values_count": missing_cells,
-            "total_cells": total_cells
-        }
-        
-        # Prepare correlations
-        numeric_df = df.select_dtypes(include=[np.number])
-        correlations = {}
-        if len(numeric_df.columns) > 1:
-            corr_matrix = numeric_df.corr()
-            for col1 in corr_matrix.columns:
-                for col2 in corr_matrix.columns:
-                    if col1 < col2:
-                        corr_val = float(corr_matrix.loc[col1, col2])
-                        if abs(corr_val) > 0.3:
-                            correlations[f"{col1}-{col2}"] = round(corr_val, 3)
-        
-        correlations_data = {
-            "dataset_id": dataset_id,
-            "correlations": correlations,
-            "threshold": 0.3
-        }
-        
-        # ✅ STORE IN DATABASE
+        # ✅ STORE IN DATABASE (with safe JSON serialization)
         try:
             existing = db.query(EdaResult).filter(EdaResult.dataset_id == dataset_id).first()
             
             if existing:
-                existing.summary = json.dumps(summary_data)
-                existing.statistics = json.dumps(statistics_data)
-                existing.quality = json.dumps(quality_data)
-                existing.correlations = json.dumps(correlations_data)
+                existing.summary = safe_json_dumps(summary_data)
+                existing.statistics = safe_json_dumps(statistics_data)
+                existing.quality = safe_json_dumps(quality_data)
+                existing.correlations = safe_json_dumps(correlations_data)
                 existing.analysis_status = "completed"
                 db.commit()
                 logger.info(f"✅ Updated EDA results in database for: {dataset_id}")
@@ -193,10 +138,10 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
                 eda_result = EdaResult(
                     dataset_id=dataset_id,
                     user_id=user_id,
-                    summary=json.dumps(summary_data),
-                    statistics=json.dumps(statistics_data),
-                    quality=json.dumps(quality_data),
-                    correlations=json.dumps(correlations_data),
+                    summary=safe_json_dumps(summary_data),
+                    statistics=safe_json_dumps(statistics_data),
+                    quality=safe_json_dumps(quality_data),
+                    correlations=safe_json_dumps(correlations_data),
                     analysis_status="completed"
                 )
                 db.add(eda_result)
