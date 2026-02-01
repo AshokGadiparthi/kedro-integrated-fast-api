@@ -158,37 +158,13 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
     except Exception as e:
         logger.error(f"❌ EDA analysis failed: {str(e)}")
         await cache_manager.set(f"eda:job:{job_id}", {
+            "job_id": job_id,
             "status": "failed",
-            "error": str(e)
+            "error": str(e),
+            "progress": 0,
+            "current_phase": "Failed",
+            "updated_at": datetime.utcnow().isoformat()
         }, ttl=86400)
-    """
-    Extract user_id from JWT token using Request object
-    Works for both POST and GET requests
-    """
-    # Get authorization header (case-insensitive)
-    auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
-    
-    if not auth_header:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization header"
-        )
-    
-    token = extract_token_from_header(auth_header)
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Authorization header format"
-        )
-    
-    user_id = verify_token(token)
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
-    
-    return user_id
 
 # ============================================================================
 # ENDPOINT 1: HEALTH CHECK
@@ -390,8 +366,13 @@ async def get_job_status(request: Request,
                 detail=f"Job '{job_id}' not found or expired"
             )
         
-        job = json.loads(job_data)
-        logger.info(f"✅ Job status: {job['status']} (progress: {job['progress']}%)")
+        # job_data is already a dict, add defaults for missing fields
+        job = job_data if isinstance(job_data, dict) else json.loads(job_data)
+        job.setdefault("progress", 0)
+        job.setdefault("current_phase", "Processing")
+        job.setdefault("updated_at", datetime.utcnow().isoformat())
+        
+        logger.info(f"✅ Job status: {job['status']} (progress: {job.get('progress', 0)}%)")
         
         return JobStatusResponse(**job)
         
