@@ -1,5 +1,5 @@
 """Database Models"""
-from sqlalchemy import Column, String, DateTime, Text
+from sqlalchemy import Column, String, DateTime, Text, Integer
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -13,6 +13,16 @@ class User(Base):
     password_hash = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class Project(Base):
+    """Project model"""
+    __tablename__ = "projects"
+    
+    id = Column(String, primary_key=True)
+    name = Column(String, index=True)
+    description = Column(Text, nullable=True)
+    owner_id = Column(String, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class Dataset(Base):
     """Dataset model"""
     __tablename__ = "datasets"
@@ -20,8 +30,9 @@ class Dataset(Base):
     id = Column(String, primary_key=True)
     name = Column(String, index=True)
     project_id = Column(String, index=True)
+    description = Column(Text, nullable=True)
     file_name = Column(String)
-    file_size_bytes = Column(String)
+    file_size_bytes = Column(Integer)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Activity(Base):
