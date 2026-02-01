@@ -1,13 +1,13 @@
 """
 Datasets API - Phase 3
-File upload and dataset management
+File upload and dataset management with proper metrics calculation
 
 ENDPOINTS:
-POST   /api/datasets/{project_id}          Upload file
-GET    /api/datasets/details/{id}          Get details (MUST BE BEFORE /{id})
-GET    /api/datasets/{id}/preview          Get file preview (MUST BE BEFORE /{id})
-GET    /api/datasets/{id}/quality          Get quality metrics (MUST BE BEFORE /{id})
-GET    /api/datasets/{project_id}          List datasets (GENERIC - LAST)
+POST   /api/datasets/{project_id}          Upload file with schema inference
+GET    /api/datasets/details/{id}          Get dataset details
+GET    /api/datasets/{id}/preview          Get file preview with actual data
+GET    /api/datasets/{id}/quality          Get quality metrics
+GET    /api/datasets/{project_id}          List all datasets
 DELETE /api/datasets/{id}                  Delete dataset
 """
 
@@ -68,7 +68,7 @@ def verify_project_access(project_id: str, user: User, db: Session) -> Project:
 
 
 # ============================================================================
-# UPLOAD FILE
+# UPLOAD FILE - WITH PROPER METRICS CALCULATION
 # ============================================================================
 
 @router.post("/{project_id}", status_code=201, summary="Upload dataset")
@@ -80,7 +80,7 @@ async def upload_dataset(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Upload dataset file with query parameters"""
+    """Upload dataset file and calculate metrics"""
     
     project = verify_project_access(project_id, current_user, db)
     logger.info(f"📤 Uploading: {file.filename}")
@@ -101,13 +101,95 @@ async def upload_dataset(
     except Exception as e:
         raise HTTPException(400, f"Error reading file: {str(e)}")
     
-    # Infer schema
-    try:
-        schema, row_count, quality_score = _infer_schema(file_content, file_ext)
-    except:
-        schema, row_count, quality_score = [], 0, 0
+    # ============================================================================
+    # CALCULATE METRICS - PROPERLY!
+    # ============================================================================
     
-    # Create dataset
+    schema = []
+    row_count = 0
+    column_count = 0
+    quality_score = 0.0
+    missing_values_pct = 0.0
+    duplicate_rows_pct = 0.0
+    
+    try:
+        import pandas as pd
+        
+        logger.info(f"📊 Parsing {file_ext} file...")
+        
+        # Parse file based on format
+        if file_ext == "csv":
+            df = pd.read_csv(io.BytesIO(file_content))
+        elif file_ext == "tsv":
+            df = pd.read_csv(io.BytesIO(file_content), sep="\t")
+        elif file_ext == "json":
+            df = pd.read_json(io.BytesIO(file_content))
+        elif file_ext in ["xlsx", "xls"]:
+            df = pd.read_excel(io.BytesIO(file_content))
+        elif file_ext == "parquet":
+            df = pd.read_parquet(io.BytesIO(file_content))
+        else:
+            raise ValueError(f"Unsupported format: {file_ext}")
+        
+        logger.info(f"✅ File parsed successfully")
+        
+        # Get actual counts
+        row_count = len(df)
+        column_count = len(df.columns)
+        
+        logger.info(f"📈 Rows: {row_count}, Columns: {column_count}")
+        
+        # Calculate missing values percentage
+        total_cells = row_count * column_count
+        missing_cells = df.isnull().sum().sum()
+        missing_values_pct = (missing_cells / total_cells * 100) if total_cells > 0 else 0.0
+        
+        # Calculate duplicate rows percentage
+        duplicate_rows = df.duplicated().sum()
+        duplicate_rows_pct = (duplicate_rows / row_count * 100) if row_count > 0 else 0.0
+        
+        # Overall quality score (0-100)
+        completeness = (1 - missing_values_pct / 100) * 100
+        uniqueness = (1 - duplicate_rows_pct / 100) * 100
+        quality_score = (completeness + uniqueness) / 2
+        
+        logger.info(f"📊 Missing: {missing_values_pct:.1f}%, Duplicates: {duplicate_rows_pct:.1f}%, Quality: {quality_score:.1f}%")
+        
+        # Build schema with column details
+        for col in df.columns:
+            col_type = str(df[col].dtype)
+            
+            if "int" in col_type:
+                simple_type = "integer"
+            elif "float" in col_type:
+                simple_type = "float"
+            elif "object" in col_type:
+                simple_type = "string"
+            elif "datetime" in col_type or "date" in col_type:
+                simple_type = "datetime"
+            elif "bool" in col_type:
+                simple_type = "boolean"
+            else:
+                simple_type = "string"
+            
+            schema.append({
+                "name": col,
+                "type": simple_type,
+                "nullable": bool(df[col].isnull().any())
+            })
+        
+        logger.info(f"✅ Schema built: {len(schema)} columns")
+        
+    except Exception as e:
+        logger.error(f"❌ Error processing file: {str(e)}")
+        schema = []
+        row_count = 0
+        column_count = 0
+        quality_score = 0.0
+        missing_values_pct = 0.0
+        duplicate_rows_pct = 0.0
+    
+    # Create dataset with CALCULATED VALUES
     dataset = Dataset(
         project_id=project_id,
         name=name,
@@ -115,12 +197,14 @@ async def upload_dataset(
         file_name=file.filename,
         file_format=file_ext,
         file_content=file_content,
-        row_count=row_count,
-        column_count=len(schema),
+        row_count=row_count,  # ✅ REAL VALUE
+        column_count=column_count,  # ✅ REAL VALUE
         columns_info=schema,
         schema_inferred=len(schema) > 0,
         schema_confidence=95.0 if schema else 0,
-        quality_score=quality_score,
+        quality_score=quality_score,  # ✅ REAL VALUE
+        missing_values_pct=missing_values_pct,  # ✅ REAL VALUE
+        duplicate_rows_pct=duplicate_rows_pct,  # ✅ REAL VALUE
         status="ready"
     )
     
@@ -133,9 +217,12 @@ async def upload_dataset(
         "id": dataset.id,
         "name": name,
         "file_name": file.filename,
+        "file_size": file_size,
         "row_count": row_count,
-        "column_count": len(schema),
+        "column_count": column_count,
         "quality_score": quality_score,
+        "missing_values_pct": missing_values_pct,
+        "duplicate_rows_pct": duplicate_rows_pct,
         "schema": schema,
         "status": "ready",
         "created_at": dataset.created_at.isoformat()
@@ -143,10 +230,9 @@ async def upload_dataset(
 
 
 # ============================================================================
-# SPECIFIC ROUTES - MUST COME BEFORE GENERIC /{project_id}
+# GET DATASET DETAILS - SPECIFIC (MUST BE BEFORE GENERIC /{project_id})
 # ============================================================================
 
-# GET DATASET DETAILS
 @router.get("/details/{dataset_id}", summary="Get dataset details")
 def get_dataset_details(
     dataset_id: str,
@@ -174,7 +260,10 @@ def get_dataset_details(
     }
 
 
-# GET DATASET PREVIEW
+# ============================================================================
+# GET DATASET PREVIEW - SPECIFIC (MUST BE BEFORE GENERIC /{project_id})
+# ============================================================================
+
 @router.get("/{dataset_id}/preview", summary="Get dataset preview")
 def get_dataset_preview(
     dataset_id: str,
@@ -216,15 +305,18 @@ def get_dataset_preview(
             "rows": len(data),
             "columns": list(df.columns),
             "data": data,
-            "total_rows": dataset.row_count,
-            "total_columns": dataset.column_count
+            "total_rows": dataset.row_count,  # ✅ FROM DATABASE
+            "total_columns": dataset.column_count  # ✅ FROM DATABASE
         }
     except Exception as e:
         logger.error(f"Error reading dataset: {str(e)}")
         raise HTTPException(500, f"Error reading file: {str(e)}")
 
 
-# GET DATASET QUALITY
+# ============================================================================
+# GET DATASET QUALITY - SPECIFIC (MUST BE BEFORE GENERIC /{project_id})
+# ============================================================================
+
 @router.get("/{dataset_id}/quality", summary="Get dataset quality metrics")
 def get_dataset_quality(
     dataset_id: str,
@@ -244,11 +336,11 @@ def get_dataset_quality(
         "name": dataset.name,
         "file_name": dataset.file_name,
         "file_size": len(dataset.file_content) if dataset.file_content else 0,
-        "row_count": dataset.row_count,
-        "column_count": dataset.column_count,
-        "quality_score": dataset.quality_score,
-        "missing_values_pct": dataset.missing_values_pct or 0,
-        "duplicate_rows_pct": dataset.duplicate_rows_pct or 0,
+        "row_count": dataset.row_count,  # ✅ ACTUAL
+        "column_count": dataset.column_count,  # ✅ ACTUAL
+        "quality_score": dataset.quality_score,  # ✅ ACTUAL
+        "missing_values_pct": dataset.missing_values_pct or 0,  # ✅ ACTUAL
+        "duplicate_rows_pct": dataset.duplicate_rows_pct or 0,  # ✅ ACTUAL
         "schema": dataset.columns_info,
         "status": dataset.status,
         "updated_at": dataset.updated_at.isoformat()
@@ -256,7 +348,7 @@ def get_dataset_quality(
 
 
 # ============================================================================
-# GENERIC LIST DATASETS - MUST COME LAST (catches all /{project_id})
+# LIST DATASETS - GENERIC (MUST BE LAST)
 # ============================================================================
 
 @router.get("/{project_id}", summary="List datasets")
@@ -282,9 +374,11 @@ def list_datasets(
             "file_name": ds.file_name,
             "file_format": ds.file_format,
             "file_size": len(ds.file_content) if ds.file_content else 0,
-            "row_count": ds.row_count,
-            "column_count": ds.column_count,
-            "quality_score": ds.quality_score,
+            "row_count": ds.row_count,  # ✅ ACTUAL VALUE
+            "column_count": ds.column_count,  # ✅ ACTUAL VALUE
+            "quality_score": ds.quality_score,  # ✅ ACTUAL VALUE
+            "missing_values_pct": ds.missing_values_pct or 0,
+            "duplicate_rows_pct": ds.duplicate_rows_pct or 0,
             "status": ds.status,
             "created_at": ds.created_at.isoformat()
         }
@@ -315,61 +409,4 @@ def delete_dataset(
     dataset.updated_at = datetime.utcnow()
     db.commit()
     logger.info(f"✅ Archived: {dataset_id}")
-
-
-# ============================================================================
-# SCHEMA INFERENCE
-# ============================================================================
-
-def _infer_schema(file_content: bytes, file_format: str) -> tuple:
-    """Infer schema from file. Returns (schema, row_count, quality_score)"""
-    
-    try:
-        import pandas as pd
-        
-        if file_format == "csv":
-            df = pd.read_csv(io.BytesIO(file_content))
-        elif file_format == "tsv":
-            df = pd.read_csv(io.BytesIO(file_content), sep="\t")
-        elif file_format == "json":
-            df = pd.read_json(io.BytesIO(file_content))
-        elif file_format in ["xlsx", "xls"]:
-            df = pd.read_excel(io.BytesIO(file_content))
-        elif file_format == "parquet":
-            df = pd.read_parquet(io.BytesIO(file_content))
-        else:
-            raise ValueError(f"Unsupported format: {file_format}")
-        
-        schema = []
-        for col in df.columns:
-            col_type = str(df[col].dtype)
-            
-            if "int" in col_type:
-                simple_type = "integer"
-            elif "float" in col_type:
-                simple_type = "float"
-            elif "object" in col_type:
-                simple_type = "string"
-            elif "datetime" in col_type or "date" in col_type:
-                simple_type = "datetime"
-            elif "bool" in col_type:
-                simple_type = "boolean"
-            else:
-                simple_type = "string"
-            
-            schema.append({
-                "name": col,
-                "type": simple_type,
-                "nullable": bool(df[col].isnull().any())
-            })
-        
-        total_cells = df.shape[0] * df.shape[1]
-        missing_cells = df.isnull().sum().sum()
-        quality_score = 100 * (1 - missing_cells / max(total_cells, 1))
-        
-        return schema, df.shape[0], quality_score
-        
-    except Exception as e:
-        logger.error(f"Schema inference error: {str(e)}")
-        raise
 
