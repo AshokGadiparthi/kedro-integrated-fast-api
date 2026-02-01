@@ -11,6 +11,8 @@ import json
 import logging
 from datetime import datetime
 from uuid import uuid4
+import pandas as pd
+import numpy as np
 
 from app.core.database import get_db
 from app.core.cache import cache_manager
@@ -74,7 +76,62 @@ def get_current_user(
     
     return user
 
-def get_user_id_from_token(request: Request) -> str:
+async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
+    """Background task to actually run EDA analysis"""
+    try:
+        # Load dataset from file
+        from app.api.datasets import dataset_cache, UPLOAD_DIR
+        import os
+        
+        file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
+        
+        # Load from cache or file
+        if dataset_id in dataset_cache:
+            df = dataset_cache[dataset_id]
+        elif os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            dataset_cache[dataset_id] = df
+        else:
+            await cache_manager.set(f"eda:job:{job_id}", {
+                "status": "failed",
+                "error": "Dataset file not found"
+            }, ttl=86400)
+            return
+        
+        # Update job status to processing
+        job_data = await cache_manager.get(f"eda:job:{job_id}")
+        if job_data:
+            job_data["status"] = "processing"
+            job_data["current_phase"] = "Data Loading"
+            await cache_manager.set(f"eda:job:{job_id}", job_data, ttl=86400)
+        
+        # ✅ ACTUAL EDA ANALYSIS
+        analysis_result = {
+            "job_id": job_id,
+            "status": "completed",
+            "progress": 100,
+            "current_phase": "Complete",
+            "results": {
+                "shape": list(df.shape),
+                "columns": list(df.columns),
+                "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
+                "missing_values": df.isnull().sum().to_dict(),
+                "duplicates": int(df.duplicated().sum()),
+                "basic_stats": df.describe().to_dict(),
+                "memory_usage": f"{df.memory_usage(deep=True).sum() / 1024**2:.2f} MB"
+            }
+        }
+        
+        # Store results
+        await cache_manager.set(f"eda:job:{job_id}", analysis_result, ttl=86400)
+        logger.info(f"✅ EDA analysis completed: {job_id}")
+        
+    except Exception as e:
+        logger.error(f"❌ EDA analysis failed: {str(e)}")
+        await cache_manager.set(f"eda:job:{job_id}", {
+            "status": "failed",
+            "error": str(e)
+        }, ttl=86400)
     """
     Extract user_id from JWT token using Request object
     Works for both POST and GET requests
@@ -236,6 +293,10 @@ async def start_eda_analysis(request: Request,
         db.add(activity)
         db.commit()
         logger.info(f"📝 Activity logged")
+        
+        # ✅ TRIGGER BACKGROUND ANALYSIS TASK
+        background_tasks.add_task(run_eda_analysis, job_id, dataset_id, db)
+        logger.info(f"🚀 Background analysis task started for job: {job_id}")
         
         return JobStartResponse(
             job_id=job_id,
