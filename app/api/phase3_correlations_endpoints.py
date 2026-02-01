@@ -1,28 +1,64 @@
 """
 Phase 3: Advanced Correlations API Endpoints
 FastAPI router for advanced correlation analysis
-FIXED VERSION - Correct imports for your project structure
+FIXED VERSION - Proper database access & async/await
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional
 import logging
 from datetime import datetime
 import pandas as pd
 
-# ✅ FIXED: Use correct import path
+# ✅ FIXED: Correct imports
 from app.core.phase3_advanced_correlations import AdvancedCorrelationAnalysis
 from app.core.database import get_db
 from app.models.models import Dataset
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/eda", tags=["Phase 3 - Correlations"])
 logger = logging.getLogger(__name__)
 
 
+# ✅ FIXED: Proper database access function
+def get_dataset_from_db(dataset_id: str, db: Session) -> Optional[pd.DataFrame]:
+    """
+    Get dataset from database - FIXED VERSION
+
+    Args:
+        dataset_id: The dataset ID
+        db: Database session (dependency injection)
+
+    Returns:
+        pandas DataFrame or None if not found
+    """
+    try:
+        logger.info(f"📂 Retrieving dataset: {dataset_id}")
+
+        # Query the database using the session
+        dataset_record = db.query(Dataset).filter(
+            Dataset.id == dataset_id
+        ).first()
+
+        if not dataset_record:
+            logger.warning(f"⚠️ Dataset not found: {dataset_id}")
+            return None
+
+        # Load from file
+        df = pd.read_csv(dataset_record.file_path)
+        logger.info(f"✅ Loaded dataset {dataset_id} with shape {df.shape}")
+        return df
+
+    except Exception as e:
+        logger.error(f"❌ Error retrieving dataset {dataset_id}: {str(e)}")
+        return None
+
+
 @router.get("/{dataset_id}/phase3/correlations/enhanced")
 async def get_enhanced_correlations(
         dataset_id: str,
-        threshold: float = Query(0.3, ge=0.0, le=1.0)
+        threshold: float = Query(0.3, ge=0.0, le=1.0),
+        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
 ) -> dict:
     """
     Get enhanced correlation analysis
@@ -41,8 +77,8 @@ async def get_enhanced_correlations(
     try:
         logger.info(f"📊 Enhanced correlations requested for dataset: {dataset_id}")
 
-        # Get dataset
-        df = await get_dataset(dataset_id)
+        # Get dataset (FIXED: pass db session)
+        df = get_dataset_from_db(dataset_id, db)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -62,13 +98,18 @@ async def get_enhanced_correlations(
             "total_features": len(df.select_dtypes(include=['number']).columns)
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Error in enhanced correlations: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error analyzing correlations: {str(e)}")
 
 
 @router.get("/{dataset_id}/phase3/correlations/vif")
-async def get_vif_analysis(dataset_id: str) -> dict:
+async def get_vif_analysis(
+        dataset_id: str,
+        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+) -> dict:
     """
     Get Variance Inflation Factor (VIF) analysis
 
@@ -89,7 +130,7 @@ async def get_vif_analysis(dataset_id: str) -> dict:
     try:
         logger.info(f"📈 VIF analysis requested for dataset: {dataset_id}")
 
-        df = await get_dataset(dataset_id)
+        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -111,13 +152,18 @@ async def get_vif_analysis(dataset_id: str) -> dict:
             }
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Error in VIF analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error in VIF analysis: {str(e)}")
 
 
 @router.get("/{dataset_id}/phase3/correlations/heatmap-data")
-async def get_heatmap_data(dataset_id: str) -> dict:
+async def get_heatmap_data(
+        dataset_id: str,
+        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+) -> dict:
     """
     Get correlation heatmap visualization data
 
@@ -131,7 +177,7 @@ async def get_heatmap_data(dataset_id: str) -> dict:
     try:
         logger.info(f"🔥 Heatmap data requested for dataset: {dataset_id}")
 
-        df = await get_dataset(dataset_id)
+        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -148,13 +194,18 @@ async def get_heatmap_data(dataset_id: str) -> dict:
             "analysis_type": "Correlation Heatmap Data"
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Error generating heatmap data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating heatmap: {str(e)}")
 
 
 @router.get("/{dataset_id}/phase3/correlations/clustering")
-async def get_correlation_clustering(dataset_id: str) -> dict:
+async def get_correlation_clustering(
+        dataset_id: str,
+        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+) -> dict:
     """
     Get feature clustering based on correlations
 
@@ -168,7 +219,7 @@ async def get_correlation_clustering(dataset_id: str) -> dict:
     try:
         logger.info(f"🎯 Correlation clustering requested for dataset: {dataset_id}")
 
-        df = await get_dataset(dataset_id)
+        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -185,13 +236,18 @@ async def get_correlation_clustering(dataset_id: str) -> dict:
             "analysis_type": "Correlation-Based Feature Clustering"
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Error in correlation clustering: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error in clustering: {str(e)}")
 
 
 @router.get("/{dataset_id}/phase3/correlations/relationship-insights")
-async def get_relationship_insights(dataset_id: str) -> dict:
+async def get_relationship_insights(
+        dataset_id: str,
+        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+) -> dict:
     """
     Get relationship insights and patterns
 
@@ -207,7 +263,7 @@ async def get_relationship_insights(dataset_id: str) -> dict:
     try:
         logger.info(f"🔗 Relationship insights requested for dataset: {dataset_id}")
 
-        df = await get_dataset(dataset_id)
+        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -224,13 +280,18 @@ async def get_relationship_insights(dataset_id: str) -> dict:
             "analysis_type": "Relationship Insights"
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Error generating relationship insights: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating insights: {str(e)}")
 
 
 @router.get("/{dataset_id}/phase3/correlations/warnings")
-async def get_multicollinearity_warnings(dataset_id: str) -> dict:
+async def get_multicollinearity_warnings(
+        dataset_id: str,
+        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
+) -> dict:
     """
     Get multicollinearity warnings and recommendations
 
@@ -245,7 +306,7 @@ async def get_multicollinearity_warnings(dataset_id: str) -> dict:
     try:
         logger.info(f"⚠️ Multicollinearity warnings requested for dataset: {dataset_id}")
 
-        df = await get_dataset(dataset_id)
+        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -262,6 +323,8 @@ async def get_multicollinearity_warnings(dataset_id: str) -> dict:
             "analysis_type": "Multicollinearity Warnings"
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Error generating warnings: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating warnings: {str(e)}")
@@ -270,7 +333,8 @@ async def get_multicollinearity_warnings(dataset_id: str) -> dict:
 @router.get("/{dataset_id}/phase3/correlations/complete")
 async def get_complete_correlation_analysis(
         dataset_id: str,
-        threshold: float = Query(0.3, ge=0.0, le=1.0)
+        threshold: float = Query(0.3, ge=0.0, le=1.0),
+        db: Session = Depends(get_db)  # ✅ FIXED: Add database dependency
 ) -> dict:
     """
     Get complete correlation analysis (all endpoints combined)
@@ -288,7 +352,7 @@ async def get_complete_correlation_analysis(
     try:
         logger.info(f"📊 Complete correlation analysis requested for dataset: {dataset_id}")
 
-        df = await get_dataset(dataset_id)
+        df = get_dataset_from_db(dataset_id, db)  # ✅ FIXED: pass db session
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -316,33 +380,8 @@ async def get_complete_correlation_analysis(
             "total_features": len(df.select_dtypes(include=['number']).columns)
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Error in complete correlation analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-
-# ✅ FIXED: Correct helper function
-async def get_dataset(dataset_id: str):
-    """
-    Get dataset from your data store
-    """
-    try:
-        db = get_db()
-
-        # Query dataset from database
-        dataset_record = db.query(Dataset).filter(
-            Dataset.id == dataset_id
-        ).first()
-
-        if not dataset_record:
-            logger.warning(f"Dataset {dataset_id} not found in database")
-            return None
-
-        # Load from file
-        df = pd.read_csv(dataset_record.file_path)
-        logger.info(f"✅ Loaded dataset {dataset_id} with shape {df.shape}")
-        return df
-
-    except Exception as e:
-        logger.error(f"❌ Error retrieving dataset {dataset_id}: {str(e)}")
-        return None
