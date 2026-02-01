@@ -1,13 +1,19 @@
 """Datasets API Routes"""
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, UploadFile, File
 from sqlalchemy.orm import Session
 from uuid import uuid4
 from datetime import datetime
+import os
+import pandas as pd
 from app.core.database import get_db
 from app.models.models import Dataset
 from app.schemas import DatasetCreate, DatasetResponse
 
 router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
+
+# Directory to store uploaded files
+UPLOAD_DIR = "data/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.get("/", response_model=list)
 async def list_datasets(db: Session = Depends(get_db)):
@@ -52,6 +58,26 @@ async def create_dataset(dataset: DatasetCreate, db: Session = Depends(get_db)):
         "created_at": new_dataset.created_at.isoformat()
     }
 
+@router.post("/{dataset_id}/upload")
+async def upload_dataset_file(dataset_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Upload actual file data for dataset"""
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        return {"error": "Dataset not found"}
+    
+    # Save file
+    file_path = f"{UPLOAD_DIR}/{dataset_id}_{file.filename}"
+    contents = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(contents)
+    
+    # Update dataset
+    dataset.file_name = file.filename
+    dataset.file_size_bytes = len(contents)
+    db.commit()
+    
+    return {"id": dataset.id, "file_name": file.filename, "size": len(contents)}
+
 @router.get("/{dataset_id}/preview")
 async def get_dataset_preview(dataset_id: str = Path(...), rows: int = 100, db: Session = Depends(get_db)):
     """Get dataset preview (first N rows)"""
@@ -59,6 +85,23 @@ async def get_dataset_preview(dataset_id: str = Path(...), rows: int = 100, db: 
     if not dataset:
         return {"error": "Dataset not found"}
     
+    # Try to read actual file if it exists
+    file_path = f"{UPLOAD_DIR}/{dataset_id}_{dataset.file_name}"
+    if os.path.exists(file_path):
+        try:
+            df = pd.read_csv(file_path, nrows=rows)
+            preview_data = df.to_dict('records')
+            return {
+                "id": dataset.id,
+                "name": dataset.name,
+                "rows": len(preview_data),
+                "columns": list(df.columns),
+                "preview": preview_data
+            }
+        except:
+            pass
+    
+    # Fallback to sample data
     return {
         "id": dataset.id,
         "name": dataset.name,

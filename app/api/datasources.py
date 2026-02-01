@@ -31,31 +31,36 @@ async def list_datasources(db: Session = Depends(get_db)):
 @router.post("/")
 async def create_datasource(data: dict, db: Session = Depends(get_db)):
     """Create new datasource and save to database"""
-    new_datasource = Datasource(
-        id=str(uuid4()),
-        name=data.get("name"),
-        type=data.get("type"),
-        description=data.get("description"),
-        project_id=data.get("project_id"),
-        host=data.get("host"),
-        port=data.get("port"),
-        database_name=data.get("database_name"),
-        username=data.get("username"),
-        password=data.get("password"),
-        created_at=datetime.now()
-    )
-    db.add(new_datasource)
-    db.commit()
-    db.refresh(new_datasource)
-    
-    return {
-        "id": new_datasource.id,
-        "name": new_datasource.name,
-        "type": new_datasource.type,
-        "description": new_datasource.description,
-        "project_id": new_datasource.project_id,
-        "host": new_datasource.host,
-        "port": new_datasource.port,
-        "database_name": new_datasource.database_name,
-        "username": new_datasource.username
-    }
+    try:
+        new_datasource = Datasource(
+            id=str(uuid4()),
+            name=data.get("name"),
+            type=data.get("type"),
+            description=data.get("description"),
+            project_id=data.get("project_id"),
+            host=data.get("host"),
+            port=data.get("port"),
+            database_name=data.get("database_name"),
+            username=data.get("username"),
+            password=data.get("password"),
+            created_at=datetime.now()
+        )
+        db.add(new_datasource)
+        db.flush()  # Ensure it's written
+        db.commit()
+        db.refresh(new_datasource)
+        
+        return {
+            "id": new_datasource.id,
+            "name": new_datasource.name,
+            "type": new_datasource.type,
+            "description": new_datasource.description,
+            "project_id": new_datasource.project_id,
+            "host": new_datasource.host,
+            "port": new_datasource.port,
+            "database_name": new_datasource.database_name,
+            "username": new_datasource.username
+        }
+    except Exception as e:
+        db.rollback()
+        return {"error": str(e)}

@@ -31,6 +31,10 @@ python-dotenv>=1.0.0
 # HTTP client
 requests>=2.31.0
 
+# MySQL Support
+PyMySQL>=1.1.0
+mysql-connector-python>=8.0.0
+
 # ============================================================================
 # OPTIONAL PACKAGES (add only if needed)
 # ============================================================================
