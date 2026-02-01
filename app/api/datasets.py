@@ -5,6 +5,8 @@ from uuid import uuid4
 from datetime import datetime
 import os
 import pandas as pd
+import numpy as np
+import io
 from app.core.database import get_db
 from app.models.models import Dataset
 from app.schemas import DatasetCreate, DatasetResponse
@@ -14,6 +16,9 @@ router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
 # Directory to store uploaded files
 UPLOAD_DIR = "data/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# In-memory storage for dataset content (since we can't rely on file system)
+dataset_cache = {}
 
 @router.get("/", response_model=list)
 async def list_datasets(db: Session = Depends(get_db)):
@@ -60,71 +65,131 @@ async def create_dataset(dataset: DatasetCreate, db: Session = Depends(get_db)):
 
 @router.post("/{dataset_id}/upload")
 async def upload_dataset_file(dataset_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """Upload actual file data for dataset"""
+    """Upload and STORE actual file data for dataset"""
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         return {"error": "Dataset not found"}
     
-    # Save file
-    file_path = f"{UPLOAD_DIR}/{dataset_id}_{file.filename}"
-    contents = await file.read()
-    with open(file_path, "wb") as f:
-        f.write(contents)
-    
-    # Update dataset
-    dataset.file_name = file.filename
-    dataset.file_size_bytes = len(contents)
-    db.commit()
-    
-    return {"id": dataset.id, "file_name": file.filename, "size": len(contents)}
+    try:
+        # Read file content
+        contents = await file.read()
+        
+        # Save to filesystem
+        file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
+        with open(file_path, "wb") as f:
+            f.write(contents)
+        
+        # Also cache in memory for quick access
+        try:
+            df = pd.read_csv(io.BytesIO(contents))
+            dataset_cache[dataset_id] = df
+        except:
+            pass
+        
+        # Update dataset record
+        dataset.file_name = file.filename
+        dataset.file_size_bytes = len(contents)
+        db.commit()
+        
+        return {
+            "id": dataset.id,
+            "file_name": file.filename,
+            "size": len(contents),
+            "status": "uploaded"
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 @router.get("/{dataset_id}/preview")
 async def get_dataset_preview(dataset_id: str = Path(...), rows: int = 100, db: Session = Depends(get_db)):
-    """Get dataset preview (first N rows)"""
+    """Get dataset preview with REAL data from uploaded file"""
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         return {"error": "Dataset not found"}
     
-    # Try to read actual file if it exists
-    file_path = f"{UPLOAD_DIR}/{dataset_id}_{dataset.file_name}"
-    if os.path.exists(file_path):
-        try:
-            df = pd.read_csv(file_path, nrows=rows)
-            preview_data = df.to_dict('records')
-            return {
-                "id": dataset.id,
-                "name": dataset.name,
-                "rows": len(preview_data),
-                "columns": list(df.columns),
-                "preview": preview_data
-            }
-        except:
-            pass
+    df = None
     
-    # Fallback to sample data
-    return {
-        "id": dataset.id,
-        "name": dataset.name,
-        "rows": rows,
-        "preview": [
-            {"col1": "value1", "col2": "value2"},
-            {"col1": "value3", "col2": "value4"},
-        ]
-    }
+    # Try from memory cache first
+    if dataset_id in dataset_cache:
+        df = dataset_cache[dataset_id]
+    else:
+        # Try to read from filesystem
+        file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
+        if os.path.exists(file_path):
+            try:
+                df = pd.read_csv(file_path, nrows=rows)
+                dataset_cache[dataset_id] = df
+            except Exception as e:
+                return {"error": f"Could not read file: {str(e)}"}
+    
+    if df is not None and not df.empty:
+        # Return REAL data
+        return {
+            "id": dataset.id,
+            "name": dataset.name,
+            "rows": len(df),
+            "columns": list(df.columns),
+            "data": df.head(rows).to_dict('records')
+        }
+    
+    return {"error": "No data available"}
 
 @router.get("/{dataset_id}/quality")
 async def get_dataset_quality(dataset_id: str = Path(...), db: Session = Depends(get_db)):
-    """Get dataset quality report"""
+    """Get REAL data quality analysis from actual file"""
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         return {"error": "Dataset not found"}
     
-    return {
-        "id": dataset.id,
-        "name": dataset.name,
-        "quality_score": 85,
-        "completeness": 95,
-        "validity": 90,
-        "consistency": 80,
-        "issues": []
-    }
+    df = None
+    
+    # Try from memory cache first
+    if dataset_id in dataset_cache:
+        df = dataset_cache[dataset_id]
+    else:
+        # Try to read from filesystem
+        file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
+        if os.path.exists(file_path):
+            try:
+                df = pd.read_csv(file_path)
+                dataset_cache[dataset_id] = df
+            except:
+                pass
+    
+    if df is not None and not df.empty:
+        # Calculate REAL statistics
+        total_rows = len(df)
+        total_cols = len(df.columns)
+        
+        # Real missing values percentage
+        total_cells = total_rows * total_cols
+        missing_cells = df.isna().sum().sum()
+        completeness = ((total_cells - missing_cells) / total_cells * 100) if total_cells > 0 else 0
+        
+        # Real duplicate rows
+        duplicate_rows = df.duplicated().sum()
+        
+        # Real uniqueness check
+        uniqueness = 100  # Default
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) > 0:
+            avg_unique_ratio = np.mean([df[col].nunique() / len(df) for col in numeric_cols]) * 100
+            uniqueness = min(100, avg_unique_ratio)
+        
+        # Real consistency (all rows have same number of columns)
+        consistency = 100  # CSV enforces this
+        
+        return {
+            "id": dataset.id,
+            "name": dataset.name,
+            "total_rows": total_rows,
+            "total_columns": total_cols,
+            "completeness": round(completeness, 2),
+            "duplicate_rows": int(duplicate_rows),
+            "missing_values_percent": round((missing_cells / total_cells * 100) if total_cells > 0 else 0, 2),
+            "uniqueness": round(uniqueness, 2),
+            "consistency": consistency,
+            "overall_quality_score": round((completeness + uniqueness + consistency) / 3, 2)
+        }
+    
+    return {"error": "No data available"}
