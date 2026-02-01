@@ -10,6 +10,8 @@ from contextlib import asynccontextmanager
 import logging
 from app.core.database import engine, Base, init_db
 from app.api import auth, projects, datasets, datasources, models, activities, eda
+# IMPORTANT: Import models so they register with Base for table creation
+from app.models.models import User, Project, Dataset, Activity
 
 logging.basicConfig(
     level=logging.INFO,
