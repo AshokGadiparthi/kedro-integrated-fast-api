@@ -16,9 +16,10 @@ from sqlalchemy.orm import Session
 from typing import List
 import logging
 import uuid
+from datetime import datetime
 
 from app.core.database import get_db
-from app.models.models import User, Project
+from app.models.models import User, Project, Activity
 from app.schemas import (
     ProjectCreate,
     ProjectResponse,
@@ -110,6 +111,19 @@ def create_project(
     db.commit()
     db.refresh(new_project)
     
+    # 📊 LOG ACTIVITY
+    activity = Activity(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        project_id=new_project.id,
+        action="created",
+        entity_type="project",
+        entity_id=new_project.id,
+        details={"name": project_data.name}
+    )
+    db.add(activity)
+    db.commit()
+    
     logger.info(f"✅ Project created: {new_project.id}")
     return new_project
 
@@ -177,6 +191,19 @@ def update_project(
     db.commit()
     db.refresh(project)
     
+    # 📊 LOG ACTIVITY
+    activity = Activity(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        project_id=project.id,
+        action="updated",
+        entity_type="project",
+        entity_id=project.id,
+        details={"name": project.name}
+    )
+    db.add(activity)
+    db.commit()
+    
     logger.info(f"✅ Project updated: {project.name}")
     return project
 
@@ -205,6 +232,18 @@ def delete_project(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
+    
+    # 📊 LOG ACTIVITY BEFORE DELETE
+    activity = Activity(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        project_id=project.id,
+        action="deleted",
+        entity_type="project",
+        entity_id=project.id,
+        details={"name": project.name}
+    )
+    db.add(activity)
     
     db.delete(project)
     db.commit()

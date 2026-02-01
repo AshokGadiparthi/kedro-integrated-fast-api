@@ -18,9 +18,10 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
 import logging
+import uuid
 
 from app.core.database import get_db
-from app.models.models import User, Project, Model
+from app.models.models import User, Project, Model, Activity
 from app.schemas import ModelCreate, ModelResponse
 from app.core.auth import extract_token_from_header, verify_token
 
@@ -140,6 +141,19 @@ def create_model(
     db.add(db_model)
     db.commit()
     db.refresh(db_model)
+    
+    # 📊 LOG ACTIVITY
+    activity = Activity(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        project_id=project_id,
+        action="created",
+        entity_type="model",
+        entity_id=db_model.id,
+        details={"name": model_data.name, "algorithm": model_data.algorithm}
+    )
+    db.add(activity)
+    db.commit()
     
     logger.info(f"✅ Model created: {model_data.name} (ID: {db_model.id})")
     

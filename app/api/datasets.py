@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import logging
 import io
+import uuid
 from datetime import datetime
 
 from app.core.database import get_db
-from app.models.models import User, Project, Dataset
+from app.models.models import User, Project, Dataset, Activity
 from app.core.auth import verify_token, extract_token_from_header
 
 logger = logging.getLogger(__name__)
@@ -172,6 +173,19 @@ async def upload_dataset(
     db.add(dataset)
     db.commit()
     db.refresh(dataset)
+    
+    # 📊 LOG ACTIVITY
+    activity = Activity(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        project_id=project_id,
+        action="created",
+        entity_type="dataset",
+        entity_id=dataset.id,
+        details={"file_name": file.filename, "row_count": row_count}
+    )
+    db.add(activity)
+    db.commit()
     
     logger.info(f"✅ Dataset created: {dataset.id}")
     return {
