@@ -1,5 +1,5 @@
 """Datasets API Routes"""
-from fastapi import APIRouter, Depends, Path, UploadFile, File
+from fastapi import APIRouter, Depends, Path, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from uuid import uuid4
 from datetime import datetime
@@ -37,31 +37,33 @@ async def list_datasets(db: Session = Depends(get_db)):
         for d in datasets
     ]
 
+from fastapi import APIRouter, Depends, Path, UploadFile, File, Form
+
 @router.post("/", response_model=None)
 async def create_dataset(
-    name: str = None,
-    project_id: str = None, 
-    description: str = None,
-    file: UploadFile = File(None),
+    name: str = Form(...),
+    project_id: str = Form(...), 
+    description: str = Form(None),
+    file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Create new dataset - ACCEPTS BOTH metadata AND file upload in one call"""
+    """Create new dataset - ACCEPTS FormData with file and metadata"""
     
     try:
-        # Create dataset record
+        # Create dataset record with ACTUAL parameters from FormData
         new_dataset = Dataset(
             id=str(uuid4()),
-            name=name or "dataset",
-            project_id=project_id,
+            name=name,  # Use actual name from FormData
+            project_id=project_id,  # Use actual project_id from FormData
             description=description,
-            file_name="data.csv",
+            file_name=file.filename if file else "data.csv",
             file_size_bytes=0,
             created_at=datetime.now()
         )
         db.add(new_dataset)
         db.flush()
         
-        # If file provided, save it
+        # Save file if provided
         if file and file.filename:
             contents = await file.read()
             
@@ -77,9 +79,10 @@ async def create_dataset(
             except Exception as e:
                 print(f"Warning: Could not parse CSV: {e}")
             
-            # Update dataset with file info
+            # Update dataset with actual file info
             new_dataset.file_name = file.filename
             new_dataset.file_size_bytes = len(contents)
+            print(f"✅ File saved: {file.filename}, Size: {len(contents)} bytes")
         
         db.commit()
         db.refresh(new_dataset)
@@ -95,6 +98,7 @@ async def create_dataset(
         }
     except Exception as e:
         db.rollback()
+        print(f"❌ Error: {str(e)}")
         return {"error": str(e)}
 
 @router.post("/{dataset_id}/upload")
