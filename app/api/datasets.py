@@ -4,10 +4,10 @@ File upload and dataset management
 
 ENDPOINTS:
 POST   /api/datasets/{project_id}          Upload file
-GET    /api/datasets/{project_id}          List datasets
-GET    /api/datasets/details/{id}          Get details
-GET    /api/datasets/{id}/preview          Get file preview
-GET    /api/datasets/{id}/quality          Get quality metrics
+GET    /api/datasets/details/{id}          Get details (MUST BE BEFORE /{id})
+GET    /api/datasets/{id}/preview          Get file preview (MUST BE BEFORE /{id})
+GET    /api/datasets/{id}/quality          Get quality metrics (MUST BE BEFORE /{id})
+GET    /api/datasets/{project_id}          List datasets (GENERIC - LAST)
 DELETE /api/datasets/{id}                  Delete dataset
 """
 
@@ -143,7 +143,120 @@ async def upload_dataset(
 
 
 # ============================================================================
-# LIST DATASETS
+# SPECIFIC ROUTES - MUST COME BEFORE GENERIC /{project_id}
+# ============================================================================
+
+# GET DATASET DETAILS
+@router.get("/details/{dataset_id}", summary="Get dataset details")
+def get_dataset_details(
+    dataset_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get dataset details"""
+    
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(404, "Dataset not found")
+    
+    project = verify_project_access(dataset.project_id, current_user, db)
+    
+    return {
+        "id": dataset.id,
+        "name": dataset.name,
+        "file_name": dataset.file_name,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "quality_score": dataset.quality_score,
+        "schema": dataset.columns_info,
+        "status": dataset.status,
+        "created_at": dataset.created_at.isoformat()
+    }
+
+
+# GET DATASET PREVIEW
+@router.get("/{dataset_id}/preview", summary="Get dataset preview")
+def get_dataset_preview(
+    dataset_id: str,
+    rows: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get preview of dataset file (first N rows)"""
+    
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(404, "Dataset not found")
+    
+    project = verify_project_access(dataset.project_id, current_user, db)
+    
+    try:
+        import pandas as pd
+        
+        if dataset.file_format == "csv":
+            df = pd.read_csv(io.BytesIO(dataset.file_content), nrows=rows)
+        elif dataset.file_format == "tsv":
+            df = pd.read_csv(io.BytesIO(dataset.file_content), sep="\t", nrows=rows)
+        elif dataset.file_format == "json":
+            df = pd.read_json(io.BytesIO(dataset.file_content))
+            df = df.head(rows)
+        elif dataset.file_format in ["xlsx", "xls"]:
+            df = pd.read_excel(io.BytesIO(dataset.file_content), nrows=rows)
+        elif dataset.file_format == "parquet":
+            df = pd.read_parquet(io.BytesIO(dataset.file_content))
+            df = df.head(rows)
+        else:
+            raise ValueError(f"Unsupported format: {dataset.file_format}")
+        
+        data = df.to_dict(orient='records')
+        
+        return {
+            "id": dataset.id,
+            "name": dataset.name,
+            "rows": len(data),
+            "columns": list(df.columns),
+            "data": data,
+            "total_rows": dataset.row_count,
+            "total_columns": dataset.column_count
+        }
+    except Exception as e:
+        logger.error(f"Error reading dataset: {str(e)}")
+        raise HTTPException(500, f"Error reading file: {str(e)}")
+
+
+# GET DATASET QUALITY
+@router.get("/{dataset_id}/quality", summary="Get dataset quality metrics")
+def get_dataset_quality(
+    dataset_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get data quality report"""
+    
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(404, "Dataset not found")
+    
+    project = verify_project_access(dataset.project_id, current_user, db)
+    
+    return {
+        "id": dataset.id,
+        "name": dataset.name,
+        "file_name": dataset.file_name,
+        "file_size": len(dataset.file_content) if dataset.file_content else 0,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "quality_score": dataset.quality_score,
+        "missing_values_pct": dataset.missing_values_pct or 0,
+        "duplicate_rows_pct": dataset.duplicate_rows_pct or 0,
+        "schema": dataset.columns_info,
+        "status": dataset.status,
+        "updated_at": dataset.updated_at.isoformat()
+    }
+
+
+# ============================================================================
+# GENERIC LIST DATASETS - MUST COME LAST (catches all /{project_id})
 # ============================================================================
 
 @router.get("/{project_id}", summary="List datasets")
@@ -177,125 +290,6 @@ def list_datasets(
         }
         for ds in datasets
     ]
-
-
-# ============================================================================
-# GET DATASET DETAILS
-# ============================================================================
-
-@router.get("/details/{dataset_id}", summary="Get dataset details")
-def get_dataset_details(
-    dataset_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get dataset details"""
-    
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not dataset:
-        raise HTTPException(404, "Dataset not found")
-    
-    project = verify_project_access(dataset.project_id, current_user, db)
-    
-    return {
-        "id": dataset.id,
-        "name": dataset.name,
-        "file_name": dataset.file_name,
-        "row_count": dataset.row_count,
-        "column_count": dataset.column_count,
-        "quality_score": dataset.quality_score,
-        "schema": dataset.columns_info,
-        "status": dataset.status,
-        "created_at": dataset.created_at.isoformat()
-    }
-
-
-# ============================================================================
-# GET DATASET PREVIEW - Returns file preview data
-# ============================================================================
-
-@router.get("/{dataset_id}/preview", summary="Get dataset preview")
-def get_dataset_preview(
-    dataset_id: str,
-    rows: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get preview of dataset file (first N rows)"""
-    
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not dataset:
-        raise HTTPException(404, "Dataset not found")
-    
-    project = verify_project_access(dataset.project_id, current_user, db)
-    
-    try:
-        import pandas as pd
-        
-        # Parse file based on format
-        if dataset.file_format == "csv":
-            df = pd.read_csv(io.BytesIO(dataset.file_content), nrows=rows)
-        elif dataset.file_format == "tsv":
-            df = pd.read_csv(io.BytesIO(dataset.file_content), sep="\t", nrows=rows)
-        elif dataset.file_format == "json":
-            df = pd.read_json(io.BytesIO(dataset.file_content))
-            df = df.head(rows)
-        elif dataset.file_format in ["xlsx", "xls"]:
-            df = pd.read_excel(io.BytesIO(dataset.file_content), nrows=rows)
-        elif dataset.file_format == "parquet":
-            df = pd.read_parquet(io.BytesIO(dataset.file_content))
-            df = df.head(rows)
-        else:
-            raise ValueError(f"Unsupported format: {dataset.file_format}")
-        
-        data = df.to_dict(orient='records')
-        
-        return {
-            "id": dataset.id,
-            "name": dataset.name,
-            "rows": len(data),
-            "columns": list(df.columns),
-            "data": data,
-            "total_rows": dataset.row_count,
-            "total_columns": dataset.column_count
-        }
-    except Exception as e:
-        logger.error(f"Error reading dataset: {str(e)}")
-        raise HTTPException(500, f"Error reading file: {str(e)}")
-
-
-# ============================================================================
-# GET DATASET QUALITY - Returns data quality metrics
-# ============================================================================
-
-@router.get("/{dataset_id}/quality", summary="Get dataset quality metrics")
-def get_dataset_quality(
-    dataset_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get data quality report"""
-    
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not dataset:
-        raise HTTPException(404, "Dataset not found")
-    
-    project = verify_project_access(dataset.project_id, current_user, db)
-    
-    return {
-        "id": dataset.id,
-        "name": dataset.name,
-        "file_name": dataset.file_name,
-        "file_size": len(dataset.file_content) if dataset.file_content else 0,
-        "row_count": dataset.row_count,
-        "column_count": dataset.column_count,
-        "quality_score": dataset.quality_score,
-        "missing_values_pct": dataset.missing_values_pct or 0,
-        "duplicate_rows_pct": dataset.duplicate_rows_pct or 0,
-        "schema": dataset.columns_info,
-        "status": dataset.status,
-        "updated_at": dataset.updated_at.isoformat()
-    }
 
 
 # ============================================================================
