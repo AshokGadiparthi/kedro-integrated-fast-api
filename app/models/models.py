@@ -49,6 +49,88 @@ class Activity(Base):
     details = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class EdaResult(Base):
+    """EDA Analysis Results - stores all analysis data"""
+    __tablename__ = "eda_results"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    dataset_id = Column(String, index=True, unique=True)
+    user_id = Column(String, index=True)
+    
+    # Summary data (JSON stored as text)
+    summary = Column(Text)  # {shape, columns, dtypes, memory_usage}
+    
+    # Statistics data (JSON stored as text)
+    statistics = Column(Text)  # {basic_stats, missing_values, duplicates}
+    
+    # Quality metrics (JSON stored as text)
+    quality = Column(Text)  # {completeness, uniqueness, validity, consistency, etc}
+    
+    # Correlations (JSON stored as text)
+    correlations = Column(Text)  # {correlations dict, threshold}
+    
+    # Metadata
+    analysis_status = Column(String, default="completed")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+# ============================================================================
+# EDA RESULT MODELS - Store analysis results in database
+# ============================================================================
+
+class EDASummary(Base):
+    """EDA Summary - Basic profile information"""
+    __tablename__ = "eda_summary"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    dataset_id = Column(String, unique=True, index=True)
+    shape_rows = Column(Integer)
+    shape_cols = Column(Integer)
+    columns = Column(Text)  # JSON string of column names
+    dtypes = Column(Text)  # JSON string of column dtypes
+    memory_usage = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class EDAStatistics(Base):
+    """EDA Statistics - Descriptive statistics"""
+    __tablename__ = "eda_statistics"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    dataset_id = Column(String, unique=True, index=True)
+    basic_stats = Column(Text)  # JSON string of describe() results
+    missing_values = Column(Text)  # JSON string of missing values by column
+    duplicates = Column(Integer)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class EDAQuality(Base):
+    """EDA Quality Report - Data quality metrics"""
+    __tablename__ = "eda_quality"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    dataset_id = Column(String, unique=True, index=True)
+    completeness = Column(String)  # Percentage as string
+    uniqueness = Column(String)
+    validity = Column(String)
+    consistency = Column(String)
+    duplicate_rows = Column(Integer)
+    missing_values_count = Column(Integer)
+    total_cells = Column(Integer)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class EDACorrelations(Base):
+    """EDA Correlations - Correlation matrix"""
+    __tablename__ = "eda_correlations"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    dataset_id = Column(String, unique=True, index=True)
+    correlations = Column(Text)  # JSON string of correlations
+    threshold = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
 class Datasource(Base):
     """Datasource model"""
     __tablename__ = "datasources"
