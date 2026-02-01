@@ -38,18 +38,18 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
-    workspaces = relationship("Workspace", back_populates="owner", cascade="all, delete-orphan")
+    projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
     activities = relationship("Activity", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User {self.username}>"
 
 # ============================================================================
-# WORKSPACE MODEL
+# PROJECT MODEL (Direct under User - No Workspace)
 # ============================================================================
 
-class Workspace(Base):
-    __tablename__ = 'workspaces'
+class Project(Base):
+    __tablename__ = 'projects'
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     owner_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
@@ -59,29 +59,7 @@ class Workspace(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
-    owner = relationship("User", back_populates="workspaces", lazy="select")
-    projects = relationship("Project", back_populates="workspace", cascade="all, delete-orphan", lazy="select")
-    activities = relationship("Activity", back_populates="workspace", cascade="all, delete-orphan", lazy="select")
-    
-    def __repr__(self):
-        return f"<Workspace {self.name}>"
-
-# ============================================================================
-# PROJECT MODEL
-# ============================================================================
-
-class Project(Base):
-    __tablename__ = 'projects'
-    
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    workspace_id = Column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False, index=True)
-    name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    
-    workspace = relationship("Workspace", back_populates="projects", lazy="select")
+    owner = relationship("User", back_populates="projects", lazy="select")
     datasources = relationship("Datasource", back_populates="project", cascade="all, delete-orphan", lazy="select")
     datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan", lazy="select")
     models = relationship("Model", back_populates="project", cascade="all, delete-orphan", lazy="select")
@@ -204,7 +182,6 @@ class Activity(Base):
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    workspace_id = Column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=True)
     project_id = Column(String(36), ForeignKey('projects.id', ondelete='CASCADE'), nullable=True)
     action = Column(String(50), nullable=False)
     entity_type = Column(String(50), nullable=False)
@@ -213,7 +190,6 @@ class Activity(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     user = relationship("User", back_populates="activities", lazy="select")
-    workspace = relationship("Workspace", back_populates="activities", lazy="select")
     project = relationship("Project", back_populates="activities", lazy="select")
     
     def __repr__(self):

@@ -16,7 +16,7 @@ from typing import List
 import logging
 
 from app.core.database import get_db
-from app.models.models import User, Workspace, Project, Activity
+from app.models.models import User, Project, Activity
 from app.schemas import ActivityCreate, ActivityResponse
 from app.core.auth import extract_token_from_header, verify_token
 
@@ -113,22 +113,16 @@ def log_activity(
             detail="Project not found"
         )
     
-    # Verify user owns workspace
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
+    # Verify user owns project
+    if project.owner_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this project"
         )
     
     # Create activity
     db_activity = Activity(
         user_id=current_user.id,
-        workspace_id=project.workspace_id,
         project_id=project_id,
         action=activity_data.action,
         target_type=activity_data.target_type,

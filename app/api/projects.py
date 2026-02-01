@@ -1,14 +1,14 @@
 """
-Projects Routes - With Workspaces
-==================================
-Project CRUD operations
+Projects Routes - Simplified (No Workspaces)
+=============================================
+Project CRUD operations - Direct under User
 
 ENDPOINTS:
-- GET    /api/workspaces/{workspace_id}/projects          List projects
-- POST   /api/workspaces/{workspace_id}/projects          Create project
-- GET    /api/projects/{project_id}                       Get project details
-- PUT    /api/projects/{project_id}                       Update project
-- DELETE /api/projects/{project_id}                       Delete project
+- GET    /api/projects                  List all user projects
+- POST   /api/projects                  Create project
+- GET    /api/projects/{id}             Get project
+- PUT    /api/projects/{id}             Update project
+- DELETE /api/projects/{id}             Delete project
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Header
@@ -18,12 +18,11 @@ import logging
 import uuid
 
 from app.core.database import get_db
-from app.models.models import User, Workspace, Project
+from app.models.models import User, Project
 from app.schemas import (
     ProjectCreate,
     ProjectResponse,
-    ProjectUpdate,
-    ProjectListResponse
+    ProjectUpdate
 )
 from app.core.auth import verify_token, extract_token_from_header
 
@@ -66,31 +65,19 @@ def get_current_user(
 
 
 # ============================================================================
-# LIST PROJECTS IN WORKSPACE
+# LIST ALL USER PROJECTS
 # ============================================================================
 
-@router.get("/workspaces/{workspace_id}/projects", response_model=List[ProjectResponse])
-def list_projects_in_workspace(
-    workspace_id: str,
+@router.get("", response_model=List[ProjectResponse])
+def list_projects(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List all projects in a workspace"""
-    logger.info(f"📋 Listing projects in workspace: {workspace_id}")
-    
-    workspace = db.query(Workspace).filter(
-        Workspace.id == workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found"
-        )
+    """List all projects for current user"""
+    logger.info(f"📋 Listing projects for user: {current_user.username}")
     
     projects = db.query(Project).filter(
-        Project.workspace_id == workspace_id,
+        Project.owner_id == current_user.id,
         Project.is_active == True
     ).all()
     
@@ -99,33 +86,21 @@ def list_projects_in_workspace(
 
 
 # ============================================================================
-# CREATE PROJECT IN WORKSPACE
+# CREATE PROJECT
 # ============================================================================
 
-@router.post("/workspaces/{workspace_id}/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-def create_project_in_workspace(
-    workspace_id: str,
+@router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+def create_project(
     project_data: ProjectCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new project in a workspace"""
-    logger.info(f"➕ Creating project in workspace: {workspace_id}")
-    
-    workspace = db.query(Workspace).filter(
-        Workspace.id == workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found"
-        )
+    """Create a new project"""
+    logger.info(f"➕ Creating project: {project_data.name}")
     
     new_project = Project(
         id=str(uuid.uuid4()),
-        workspace_id=workspace_id,
+        owner_id=current_user.id,
         name=project_data.name,
         description=project_data.description or None,
         is_active=True
@@ -140,7 +115,7 @@ def create_project_in_workspace(
 
 
 # ============================================================================
-# GET PROJECT DETAILS
+# GET PROJECT
 # ============================================================================
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -152,24 +127,16 @@ def get_project(
     """Get project details"""
     logger.info(f"🔍 Getting project: {project_id}")
     
-    project = db.query(Project).filter(Project.id == project_id).first()
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.owner_id == current_user.id
+    ).first()
     
     if not project:
+        logger.warning(f"❌ Project not found: {project_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
-        )
-    
-    # Verify user owns workspace
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this project"
         )
     
     logger.info(f"✅ Project found: {project.name}")
@@ -190,24 +157,16 @@ def update_project(
     """Update a project"""
     logger.info(f"✏️ Updating project: {project_id}")
     
-    project = db.query(Project).filter(Project.id == project_id).first()
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.owner_id == current_user.id
+    ).first()
     
     if not project:
+        logger.warning(f"❌ Project not found: {project_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
-        )
-    
-    # Verify authorization
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized"
         )
     
     if project_data.name:
@@ -235,24 +194,16 @@ def delete_project(
     """Delete a project"""
     logger.info(f"🗑️ Deleting project: {project_id}")
     
-    project = db.query(Project).filter(Project.id == project_id).first()
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.owner_id == current_user.id
+    ).first()
     
     if not project:
+        logger.warning(f"❌ Project not found: {project_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
-        )
-    
-    # Verify authorization
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized"
         )
     
     db.delete(project)

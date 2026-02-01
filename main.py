@@ -38,9 +38,9 @@ try:
     from app.core.database import engine, Base
     print("  ✅ Database engine imported")
     
-    # Step 2: Import all models (Phase 0-3)
-    print("  → Importing models (Phase 0-3)...")
-    from app.models.models import User, Workspace, Project, Datasource, Dataset, Model, Activity
+    # Step 2: Import all models (Simplified - No Workspaces)
+    print("  → Importing models...")
+    from app.models.models import User, Project, Datasource, Dataset, Model, Activity
     print("  ✅ All models imported and registered")
     
     # 🔒 SAFEGUARD: Verify Base.metadata is not empty
@@ -62,9 +62,10 @@ try:
     
     print("\n✅ Database initialization SUCCESSFUL!")
     print("📊 Tables created:")
-    print("   - Phase 0: users, workspaces")
-    print("   - Phase 1: projects")
-    print("   - Phase 2-3: datasources, datasets, models, activities")
+    print("   - users")
+    print("   - projects (owned by users, NO workspace)")
+    print("   - datasources, datasets, models")
+    print("   - activities (audit log)")
     print("=" * 70 + "\n")
     
     logger.info("✅ Database initialization complete!")
@@ -133,12 +134,7 @@ try:
     app.include_router(auth_router, prefix="/auth", tags=["Auth"])
     logger.info("✅ Auth routes")
 
-    # Workspaces
-    from app.api.workspaces import router as workspaces_router
-    app.include_router(workspaces_router, prefix="/api/workspaces", tags=["Workspaces"])
-    logger.info("✅ Workspaces routes")
-
-    # Projects
+    # Projects (Direct - No Workspace)
     from app.api.projects import router as projects_router
     app.include_router(projects_router, prefix="/api/projects", tags=["Projects"])
     logger.info("✅ Projects routes")
