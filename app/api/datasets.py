@@ -41,52 +41,46 @@ from fastapi import APIRouter, Depends, Path, UploadFile, File, Form
 
 @router.post("/")
 async def create_dataset(
-    name: str = Form(None),
-    project_id: str = Form(None),
-    description: str = Form(None),
-    file: UploadFile = File(None),
+    name: str = None,
+    project_id: str = None,
+    description: str = None,
+    file: UploadFile = None,
     db: Session = Depends(get_db)
 ):
-    """Create dataset with file upload - SIMPLE"""
+    """Create dataset - simple parameters"""
     
-    # Create dataset record
     dataset_id = str(uuid4())
     new_dataset = Dataset(
         id=dataset_id,
         name=name or "dataset",
         project_id=project_id,
         description=description or "",
-        file_name="data.csv",
+        file_name="sample_data.csv",
         file_size_bytes=0,
         created_at=datetime.now()
     )
     db.add(new_dataset)
     db.flush()
     
-    # SAVE FILE IF PROVIDED
+    # Save file if provided
     if file:
+        contents = await file.read()
+        file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
+        
+        # Write to file
         try:
-            contents = await file.read()
-            
-            # Save to disk
-            file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
             with open(file_path, "wb") as f:
                 f.write(contents)
-            print(f"✅ File saved to: {file_path}")
             
-            # Load into cache
-            try:
-                df = pd.read_csv(file_path)
+            # Read back to verify
+            with open(file_path, "r") as f:
+                df = pd.read_csv(f)
                 dataset_cache[dataset_id] = df
-                print(f"✅ Cached {len(df)} rows x {len(df.columns)} cols")
-            except Exception as e:
-                print(f"⚠️ CSV parse error: {e}")
             
-            # Update record
             new_dataset.file_name = file.filename
             new_dataset.file_size_bytes = len(contents)
         except Exception as e:
-            print(f"❌ File save error: {e}")
+            print(f"Error: {e}")
     
     db.commit()
     db.refresh(new_dataset)
@@ -95,7 +89,6 @@ async def create_dataset(
         "id": new_dataset.id,
         "name": new_dataset.name,
         "project_id": new_dataset.project_id,
-        "description": new_dataset.description,
         "file_name": new_dataset.file_name,
         "file_size_bytes": new_dataset.file_size_bytes,
         "created_at": new_dataset.created_at.isoformat()
