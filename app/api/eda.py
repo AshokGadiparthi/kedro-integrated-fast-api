@@ -206,7 +206,7 @@ async def start_eda_analysis(
         job_data = {
             "job_id": job_id,
             "dataset_id": dataset_id,
-            "user_id": current_user.id,
+            "user_id": user_id,
             "status": "queued",
             "progress": 0,
             "current_phase": "Initializing",
@@ -220,7 +220,7 @@ async def start_eda_analysis(
         
         # Log activity
         activity = Activity(
-            user_id=current_user.id,
+            user_id=user_id,
             project_id=dataset.project_id,
             action="started",
             entity_type="eda_analysis",
