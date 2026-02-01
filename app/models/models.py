@@ -1,15 +1,13 @@
 """
 SQLAlchemy Models - Phase 3
-All models properly structured to ensure registration with Base
+All models use the SAME Base instance from database.py
 """
 
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, Float, JSON, ForeignKey, LargeBinary, Table
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from app.core.database import Base  # ✅ IMPORT Base from database.py - NOT create our own!
 from datetime import datetime
 import uuid
-
-Base = declarative_base()
 
 # ============================================================================
 # ASSOCIATION TABLE - Define FIRST
