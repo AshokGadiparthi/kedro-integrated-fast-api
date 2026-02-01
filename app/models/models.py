@@ -1,6 +1,7 @@
 """Database Models"""
 from sqlalchemy import Column, String, DateTime, Text, Integer
 from sqlalchemy.sql import func
+from uuid import uuid4
 from app.core.database import Base
 
 class User(Base):
@@ -39,7 +40,7 @@ class Activity(Base):
     """Activity model"""
     __tablename__ = "activities"
     
-    id = Column(String, primary_key=True)
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
     user_id = Column(String, index=True)
     project_id = Column(String, nullable=True)
     action = Column(String)

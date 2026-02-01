@@ -225,11 +225,11 @@ async def start_eda_analysis(
             action="started",
             entity_type="eda_analysis",
             entity_id=job_id,
-            details={
+            details=json.dumps({
                 "dataset_id": dataset_id,
                 "file_name": dataset.file_name,
                 "file_size_bytes": dataset.file_size_bytes
-            }
+            })
         )
         db.add(activity)
         db.commit()
