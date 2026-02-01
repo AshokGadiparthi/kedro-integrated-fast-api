@@ -167,6 +167,20 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
         # Store results by job_id
         await cache_manager.set(f"eda:job:{job_id}", analysis_result, ttl=86400)
         
+        # Helper function to convert numpy types to Python native types
+        def serialize_for_json(obj):
+            if isinstance(obj, dict):
+                return {k: serialize_for_json(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [serialize_for_json(v) for v in obj]
+            elif isinstance(obj, (np.integer, np.floating)):
+                return float(obj) if isinstance(obj, np.floating) else int(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif pd.isna(obj):
+                return None
+            return obj
+        
         # Also store results by dataset_id for endpoint access
         await cache_manager.set(f"eda:dataset:{dataset_id}:summary", {
             "dataset_id": dataset_id,
@@ -176,28 +190,32 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
             "memory_usage": analysis_result["results"]["memory_usage"]
         }, ttl=86400)
         
+        # Convert basic_stats to JSON-serializable format
+        basic_stats_serialized = serialize_for_json(analysis_result["results"]["basic_stats"])
+        missing_values_serialized = serialize_for_json(analysis_result["results"]["missing_values"])
+        
         await cache_manager.set(f"eda:dataset:{dataset_id}:statistics", {
             "dataset_id": dataset_id,
-            "basic_stats": analysis_result["results"]["basic_stats"],
-            "missing_values": analysis_result["results"]["missing_values"],
-            "duplicates": analysis_result["results"]["duplicates"]
+            "basic_stats": basic_stats_serialized,
+            "missing_values": missing_values_serialized,
+            "duplicates": int(analysis_result["results"]["duplicates"])
         }, ttl=86400)
         
         # Calculate quality metrics
-        total_cells = np.prod(df.shape)
-        missing_cells = df.isnull().sum().sum()
+        total_cells = int(np.prod(df.shape))
+        missing_cells = int(df.isnull().sum().sum())
         completeness = 100 - (missing_cells / total_cells * 100) if total_cells > 0 else 100
         unique_ratio = len(df) / max(df.duplicated().sum(), 1) * 100
         
         await cache_manager.set(f"eda:dataset:{dataset_id}:quality", {
             "dataset_id": dataset_id,
-            "completeness": round(completeness, 2),
-            "uniqueness": round(unique_ratio, 2),
+            "completeness": round(float(completeness), 2),
+            "uniqueness": round(float(unique_ratio), 2),
             "validity": 95.0,
             "consistency": 98.0,
             "duplicate_rows": int(df.duplicated().sum()),
-            "missing_values_count": int(missing_cells),
-            "total_cells": int(total_cells)
+            "missing_values_count": missing_cells,
+            "total_cells": total_cells
         }, ttl=86400)
         
         # Calculate correlations for numeric columns
