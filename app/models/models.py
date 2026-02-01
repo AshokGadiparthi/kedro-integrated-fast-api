@@ -55,7 +55,13 @@ class Datasource(Base):
     id = Column(String, primary_key=True)
     name = Column(String, index=True)
     type = Column(String)
-    connection_string = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)
+    project_id = Column(String, index=True)
+    host = Column(String, nullable=True)
+    port = Column(Integer, nullable=True)
+    database_name = Column(String, nullable=True)
+    username = Column(String, nullable=True)
+    password = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Model(Base):
