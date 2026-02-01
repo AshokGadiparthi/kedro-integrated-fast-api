@@ -18,6 +18,14 @@ from app.schemas.eda_schemas import (
     SummaryResponse, StatisticsSimpleResponse, QualityResponse, CorrelationsResponse
 )
 
+# At the top of your eda.py file
+from app.core.phase3_advanced_correlations import AdvancedCorrelationAnalysis
+
+# Add the Phase 3 Correlations endpoints
+# Option A: Import the router directly
+from app.api.phase3_correlations_endpoints import router as phase3_router
+app.include_router(phase3_router)
+
 router = APIRouter(prefix="/api/eda", tags=["EDA"])
 logger = logging.getLogger(__name__)
 
