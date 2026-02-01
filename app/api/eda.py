@@ -74,6 +74,38 @@ def get_current_user(
     
     return user
 
+def get_user_id_from_token(authorization: Optional[str] = Header(None)) -> str:
+    """
+    Extract user_id from JWT token WITHOUT database lookup
+    SIMPLE: Just verifies token is valid and returns user_id
+    """
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header"
+        )
+    
+    token = extract_token_from_header(authorization)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format"
+        )
+    
+    user_id = verify_token(token)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    return user_id
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    return user
+
 # ============================================================================
 # ENDPOINT 1: HEALTH CHECK
 # ============================================================================
@@ -160,9 +192,9 @@ async def start_eda_analysis(
     try:
         logger.info(f"📊 EDA analysis requested for dataset: {dataset_id}")
         
-        # Authenticate user
-        current_user = get_current_user(authorization, db)
-        logger.info(f"👤 User authenticated: {current_user.username}")
+        # Get user_id from token (no database lookup needed)
+        user_id = get_user_id_from_token(authorization)
+        logger.info(f"👤 User authenticated: {user_id}")
         
         # Verify dataset exists
         dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
@@ -260,7 +292,7 @@ async def get_job_status(
         logger.info(f"🔍 Job status requested: {job_id}")
         
         # Verify authorization
-        current_user = get_current_user(authorization, db)
+        user_id = get_user_id_from_token(authorization)
         
         # Get job from cache
         job_data = await cache_manager.get(f"eda:job:{job_id}")
@@ -322,7 +354,7 @@ async def get_eda_summary(
         logger.info(f"📋 Summary requested for dataset: {dataset_id}")
         
         # Verify authorization
-        current_user = get_current_user(authorization, db)
+        user_id = get_user_id_from_token(authorization)
         
         # Get from cache
         cached = await cache_manager.get(f"eda:summary:{dataset_id}")
@@ -391,7 +423,7 @@ async def get_statistics(
         logger.info(f"📊 Statistics requested for dataset: {dataset_id}")
         
         # Verify authorization
-        current_user = get_current_user(authorization, db)
+        user_id = get_user_id_from_token(authorization)
         
         # Get from cache
         cached = await cache_manager.get(f"eda:statistics:{dataset_id}")
@@ -453,7 +485,7 @@ async def get_quality_report(
         logger.info(f"🔍 Quality report requested for dataset: {dataset_id}")
         
         # Verify authorization
-        current_user = get_current_user(authorization, db)
+        user_id = get_user_id_from_token(authorization)
         
         # Get from cache
         cached = await cache_manager.get(f"eda:quality_report:{dataset_id}")
@@ -519,7 +551,7 @@ async def get_correlations(
         logger.info(f"🔗 Correlations requested for dataset: {dataset_id}")
         
         # Verify authorization
-        current_user = get_current_user(authorization, db)
+        user_id = get_user_id_from_token(authorization)
         
         # Get from cache
         cached = await cache_manager.get(f"eda:correlations:{dataset_id}")
@@ -582,7 +614,7 @@ async def get_full_report(
         logger.info(f"📄 Full report requested for dataset: {dataset_id}")
         
         # Verify authorization
-        current_user = get_current_user(authorization, db)
+        user_id = get_user_id_from_token(authorization)
         
         # Get from cache
         cached = await cache_manager.get(f"eda:report:{dataset_id}:{format}")
