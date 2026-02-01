@@ -1,8 +1,7 @@
 """
 Phase 3: Advanced Correlations API Endpoints
 FastAPI router for advanced correlation analysis
-COMPLETE FIXED VERSION - Adaptive Database Access
-Works with ANY Dataset model schema!
+FINAL CUSTOMIZED VERSION - Works with YOUR Dataset model!
 """
 
 from fastapi import APIRouter, HTTPException, Query, Depends
@@ -24,16 +23,16 @@ logger = logging.getLogger(__name__)
 
 def get_dataset_from_db(dataset_id: str, db: Session) -> Optional[pd.DataFrame]:
     """
-    Get dataset from database - ADAPTIVE VERSION
+    Get dataset from database - CUSTOMIZED for YOUR schema
 
-    Automatically finds the correct file path attribute by trying multiple names:
-    - file_path
-    - storage_path
-    - path
-    - file_location
-    - upload_path
-    - data_path
-    - filepath
+    Your Dataset model has these attributes:
+    - id: Dataset ID
+    - project_id: Project reference
+    - file_name: ✅ THE FILE PATH/NAME
+    - created_at: Creation timestamp
+    - description: Description text
+    - name: Dataset name
+    - file_size_bytes: File size
 
     Args:
         dataset_id: The dataset ID
@@ -54,43 +53,54 @@ def get_dataset_from_db(dataset_id: str, db: Session) -> Optional[pd.DataFrame]:
             logger.warning(f"⚠️ Dataset not found: {dataset_id}")
             return None
 
-        # ✅ ADAPTIVE: Try multiple file path attribute names
+        # ✅ YOUR SCHEMA: Use file_name attribute
         file_path = None
-        possible_attributes = [
-            'file_path',      # Most common
-            'storage_path',   # Alternative
-            'path',           # Simple
-            'file_location',  # Verbose
-            'upload_path',    # Upload directory
-            'data_path',      # Data directory
-            'filepath',       # No underscore
-        ]
 
-        # Try to find the file path attribute
-        for attr_name in possible_attributes:
-            if hasattr(dataset_record, attr_name):
-                potential_path = getattr(dataset_record, attr_name)
-                if potential_path:  # Make sure it's not None
-                    file_path = potential_path
-                    logger.info(f"✅ Found file path in attribute: '{attr_name}'")
-                    break
+        # Try primary attribute first (YOUR schema)
+        if hasattr(dataset_record, 'file_name') and dataset_record.file_name:
+            file_path = dataset_record.file_name
+            logger.info(f"✅ Found file path in attribute: 'file_name'")
 
-        # If no file path found, raise error with available attributes
+        # Fallback to other common attributes if needed
+        if not file_path:
+            possible_attributes = [
+                'file_path',      # Alternative names
+                'storage_path',
+                'path',
+                'file_location',
+                'upload_path',
+                'data_path',
+                'filepath'
+            ]
+
+            for attr_name in possible_attributes:
+                if hasattr(dataset_record, attr_name):
+                    potential_path = getattr(dataset_record, attr_name)
+                    if potential_path:
+                        file_path = potential_path
+                        logger.info(f"✅ Found file path in attribute: '{attr_name}'")
+                        break
+
+        # If still no file path found, log available attributes
         if not file_path:
             available_attrs = [k for k in dataset_record.__dict__.keys() if not k.startswith('_')]
             logger.error(f"❌ No file path found in Dataset attributes")
-            logger.error(f"   Available attributes: {available_attrs}")
+            logger.error(f"   Available: {available_attrs}")
+            logger.error(f"   Expected one of: file_name, file_path, storage_path, path, file_location")
             raise HTTPException(
                 status_code=500,
-                detail=f"Cannot determine file path. Available attributes: {available_attrs}"
+                detail=f"Cannot determine file path. Dataset attributes: {available_attrs}"
             )
 
         # Verify file exists
         if not os.path.exists(file_path):
             logger.error(f"❌ File not found at path: {file_path}")
+            logger.error(f"   File path type: {type(file_path)}")
+            logger.error(f"   File path value: {file_path}")
             raise HTTPException(status_code=500, detail=f"Dataset file not found: {file_path}")
 
         # Load the CSV file
+        logger.info(f"📖 Loading CSV from: {file_path}")
         df = pd.read_csv(file_path)
         logger.info(f"✅ Loaded dataset {dataset_id} with shape {df.shape}")
         return df
@@ -99,6 +109,7 @@ def get_dataset_from_db(dataset_id: str, db: Session) -> Optional[pd.DataFrame]:
         raise
     except Exception as e:
         logger.error(f"❌ Error retrieving dataset {dataset_id}: {str(e)}")
+        logger.error(f"   Exception type: {type(e).__name__}")
         return None
 
 
@@ -129,7 +140,7 @@ async def get_enhanced_correlations(
     try:
         logger.info(f"📊 Enhanced correlations requested for dataset: {dataset_id}")
 
-        # Get dataset with adaptive schema detection
+        # Get dataset
         df = get_dataset_from_db(dataset_id, db)
 
         if df is None:
