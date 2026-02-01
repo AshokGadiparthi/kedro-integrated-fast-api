@@ -1,16 +1,19 @@
 """
 Phase 3: Advanced Correlations API Endpoints
 FastAPI router for advanced correlation analysis
+FIXED VERSION - Correct imports for your project structure
 """
 
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 import logging
 from datetime import datetime
-import sys
-sys.path.insert(0, '/path/to/your/project/app/core')
+import pandas as pd
 
-from phase3_advanced_correlations import AdvancedCorrelationAnalysis
+# ✅ FIXED: Use correct import path
+from app.core.phase3_advanced_correlations import AdvancedCorrelationAnalysis
+from app.core.database import get_db
+from app.models.models import Dataset
 
 router = APIRouter(prefix="/api/eda", tags=["Phase 3 - Correlations"])
 logger = logging.getLogger(__name__)
@@ -38,8 +41,8 @@ async def get_enhanced_correlations(
     try:
         logger.info(f"📊 Enhanced correlations requested for dataset: {dataset_id}")
 
-        # Get dataset (implement based on your data access layer)
-        df = get_dataset(dataset_id)
+        # Get dataset
+        df = await get_dataset(dataset_id)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -86,7 +89,7 @@ async def get_vif_analysis(dataset_id: str) -> dict:
     try:
         logger.info(f"📈 VIF analysis requested for dataset: {dataset_id}")
 
-        df = get_dataset(dataset_id)
+        df = await get_dataset(dataset_id)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -128,7 +131,7 @@ async def get_heatmap_data(dataset_id: str) -> dict:
     try:
         logger.info(f"🔥 Heatmap data requested for dataset: {dataset_id}")
 
-        df = get_dataset(dataset_id)
+        df = await get_dataset(dataset_id)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -165,7 +168,7 @@ async def get_correlation_clustering(dataset_id: str) -> dict:
     try:
         logger.info(f"🎯 Correlation clustering requested for dataset: {dataset_id}")
 
-        df = get_dataset(dataset_id)
+        df = await get_dataset(dataset_id)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -204,7 +207,7 @@ async def get_relationship_insights(dataset_id: str) -> dict:
     try:
         logger.info(f"🔗 Relationship insights requested for dataset: {dataset_id}")
 
-        df = get_dataset(dataset_id)
+        df = await get_dataset(dataset_id)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -242,7 +245,7 @@ async def get_multicollinearity_warnings(dataset_id: str) -> dict:
     try:
         logger.info(f"⚠️ Multicollinearity warnings requested for dataset: {dataset_id}")
 
-        df = get_dataset(dataset_id)
+        df = await get_dataset(dataset_id)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -285,7 +288,7 @@ async def get_complete_correlation_analysis(
     try:
         logger.info(f"📊 Complete correlation analysis requested for dataset: {dataset_id}")
 
-        df = get_dataset(dataset_id)
+        df = await get_dataset(dataset_id)
 
         if df is None:
             raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
@@ -318,27 +321,28 @@ async def get_complete_correlation_analysis(
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
-# Helper function to get dataset (implement based on your data access layer)
-def get_dataset(dataset_id: str):
+# ✅ FIXED: Correct helper function
+async def get_dataset(dataset_id: str):
     """
     Get dataset from your data store
     """
     try:
-        from app.database import get_db
-        from app.models import Dataset
-
         db = get_db()
+
+        # Query dataset from database
         dataset_record = db.query(Dataset).filter(
             Dataset.id == dataset_id
         ).first()
 
         if not dataset_record:
+            logger.warning(f"Dataset {dataset_id} not found in database")
             return None
 
-        # Load from file or database
-        import pandas as pd
+        # Load from file
         df = pd.read_csv(dataset_record.file_path)
+        logger.info(f"✅ Loaded dataset {dataset_id} with shape {df.shape}")
         return df
+
     except Exception as e:
-        logger.error(f"Error retrieving dataset: {str(e)}")
+        logger.error(f"❌ Error retrieving dataset {dataset_id}: {str(e)}")
         return None

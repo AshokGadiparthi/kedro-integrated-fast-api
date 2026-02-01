@@ -18,13 +18,6 @@ from app.schemas.eda_schemas import (
     SummaryResponse, StatisticsSimpleResponse, QualityResponse, CorrelationsResponse
 )
 
-# At the top of your eda.py file
-from app.core.phase3_advanced_correlations import AdvancedCorrelationAnalysis
-
-# Add the Phase 3 Correlations endpoints
-# Option A: Import the router directly
-from app.api.phase3_correlations_endpoints import router as phase3_router
-app.include_router(phase3_router)
 
 router = APIRouter(prefix="/api/eda", tags=["EDA"])
 logger = logging.getLogger(__name__)
@@ -65,17 +58,17 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
     try:
         from app.api.datasets import dataset_cache, UPLOAD_DIR
         import os
-        
+
         file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
-        
+
         # Get original job data
         original_job_data = await cache_manager.get(f"eda:job:{job_id}")
         if not original_job_data:
             logger.error(f"❌ Original job not found: {job_id}")
             return
-        
+
         original_job = original_job_data if isinstance(original_job_data, dict) else json.loads(original_job_data)
-        
+
         # Load dataset
         if dataset_id in dataset_cache:
             df = dataset_cache[dataset_id]
@@ -87,7 +80,7 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
             await cache_manager.set(f"eda:job:{job_id}", failed_job, ttl=86400)
             logger.error(f"❌ Dataset file not found: {file_path}")
             return
-        
+
         # Update job status
         processing_job = {
             **original_job,
@@ -97,22 +90,22 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
             "updated_at": datetime.utcnow().isoformat()
         }
         await cache_manager.set(f"eda:job:{job_id}", processing_job, ttl=86400)
-        
+
         # ✅ UNIVERSAL ANALYSIS (Works with ANY dataset!)
         analyzer = UniversalEDAAnalyzer(df)
-        
+
         summary_data = analyzer.get_summary()
         summary_data["dataset_id"] = dataset_id  # Set dataset_id
-        
+
         statistics_data = analyzer.get_statistics()
         statistics_data["dataset_id"] = dataset_id  # Set dataset_id
-        
+
         quality_data = analyzer.get_quality_report()
         quality_data["dataset_id"] = dataset_id  # Set dataset_id
-        
+
         correlations_data = analyzer.get_correlations()
         correlations_data["dataset_id"] = dataset_id  # Set dataset_id
-        
+
         # Update cache with job results (for polling)
         analysis_result = {
             **original_job,
@@ -127,13 +120,13 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
                 "correlations": correlations_data
             }
         }
-        
+
         await cache_manager.set(f"eda:job:{job_id}", analysis_result, ttl=86400)
-        
+
         # ✅ STORE IN DATABASE (with safe JSON serialization)
         try:
             existing = db.query(EdaResult).filter(EdaResult.dataset_id == dataset_id).first()
-            
+
             if existing:
                 existing.summary = safe_json_dumps(summary_data)
                 existing.statistics = safe_json_dumps(statistics_data)
@@ -160,9 +153,9 @@ async def run_eda_analysis(job_id: str, dataset_id: str, db: Session):
             logger.error(f"❌ Database error: {str(db_error)}")
             db.rollback()
             raise
-        
+
         logger.info(f"✅ EDA analysis completed: {job_id}")
-        
+
     except Exception as e:
         logger.error(f"❌ EDA analysis failed: {str(e)}", exc_info=True)
         original_job_data = await cache_manager.get(f"eda:job:{job_id}")
@@ -216,30 +209,30 @@ async def eda_health_check():
     tags=["Analysis"]
 )
 async def start_eda_analysis(
-    request: Request,
-    dataset_id: str,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+        request: Request,
+        dataset_id: str,
+        background_tasks: BackgroundTasks,
+        db: Session = Depends(get_db)
 ):
     """✅ Start EDA Analysis - Returns job_id for polling"""
     try:
         logger.info(f"📊 EDA analysis requested for dataset: {dataset_id}")
-        
+
         user_id = get_user_id_from_token(request)
         logger.info(f"👤 User authenticated: {user_id}")
-        
+
         # Verify dataset exists
         from app.models.models import Dataset
         dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
-        
+
         logger.info(f"✅ Dataset verified: {dataset.file_name}")
-        
+
         # Create job
         from uuid import uuid4
         job_id = str(uuid4())
-        
+
         job_data = {
             "job_id": job_id,
             "dataset_id": dataset_id,
@@ -250,10 +243,10 @@ async def start_eda_analysis(
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
         }
-        
+
         await cache_manager.set(f"eda:job:{job_id}", job_data, ttl=86400)
         logger.info(f"🔄 Job created: {job_id}")
-        
+
         # Log activity
         from app.models.models import Activity
         activity = Activity(
@@ -266,18 +259,18 @@ async def start_eda_analysis(
         db.add(activity)
         db.commit()
         logger.info(f"📝 Activity logged")
-        
+
         # Start background task
         background_tasks.add_task(run_eda_analysis, job_id, dataset_id, db)
         logger.info(f"🚀 Background analysis task started for job: {job_id}")
-        
+
         return {
             "job_id": job_id,
             "dataset_id": dataset_id,
             "status": "queued",
             "message": "Analysis started. Use GET /api/eda/jobs/{job_id} to check progress."
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -298,26 +291,26 @@ async def get_job_status(request: Request, job_id: str, db: Session = Depends(ge
     """✅ Get Job Status - Check analysis progress"""
     try:
         logger.info(f"🔍 Job status requested: {job_id}")
-        
+
         user_id = get_user_id_from_token(request)
-        
+
         job_data = await cache_manager.get(f"eda:job:{job_id}")
-        
+
         if not job_data:
             logger.warning(f"⚠️ Job not found: {job_id}")
             raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found or expired")
-        
+
         job = job_data if isinstance(job_data, dict) else json.loads(job_data)
         job.setdefault("progress", 0)
         job.setdefault("current_phase", "Processing")
         job.setdefault("updated_at", datetime.utcnow().isoformat())
         job.setdefault("dataset_id", job.get("dataset_id", "unknown"))
         job.setdefault("created_at", job.get("created_at", datetime.utcnow().isoformat()))
-        
+
         logger.info(f"✅ Job status: {job['status']} (progress: {job.get('progress', 0)}%)")
-        
+
         return JobStatusResponse(**job)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -337,22 +330,22 @@ async def get_summary(request: Request, dataset_id: str, db: Session = Depends(g
     """✅ Get Data Summary - Basic profile from database"""
     try:
         logger.info(f"📋 Summary requested for dataset: {dataset_id}")
-        
+
         user_id = get_user_id_from_token(request)
-        
+
         result = db.query(EdaResult).filter(EdaResult.dataset_id == dataset_id).first()
-        
+
         if not result or not result.summary:
             logger.warning(f"⚠️ Summary not found for dataset: {dataset_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Summary not found. Run analysis first using POST /dataset/{id}/analyze"
             )
-        
+
         summary = json.loads(result.summary)
         logger.info(f"✅ Summary retrieved from database")
         return summary
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -372,22 +365,22 @@ async def get_statistics(request: Request, dataset_id: str, db: Session = Depend
     """✅ Get Statistics - Descriptive statistics from database"""
     try:
         logger.info(f"📊 Statistics requested for dataset: {dataset_id}")
-        
+
         user_id = get_user_id_from_token(request)
-        
+
         result = db.query(EdaResult).filter(EdaResult.dataset_id == dataset_id).first()
-        
+
         if not result or not result.statistics:
             logger.warning(f"⚠️ Statistics not found for dataset: {dataset_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Statistics not found. Run analysis first using POST /dataset/{id}/analyze"
             )
-        
+
         statistics = json.loads(result.statistics)
         logger.info(f"✅ Statistics retrieved from database")
         return statistics
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -407,22 +400,22 @@ async def get_quality_report(request: Request, dataset_id: str, db: Session = De
     """✅ Get Quality Report - Data quality metrics from database"""
     try:
         logger.info(f"🔍 Quality report requested for dataset: {dataset_id}")
-        
+
         user_id = get_user_id_from_token(request)
-        
+
         result = db.query(EdaResult).filter(EdaResult.dataset_id == dataset_id).first()
-        
+
         if not result or not result.quality:
             logger.warning(f"⚠️ Quality report not found for dataset: {dataset_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Quality report not found. Run analysis first using POST /dataset/{id}/analyze"
             )
-        
+
         quality = json.loads(result.quality)
         logger.info(f"✅ Quality report retrieved from database")
         return quality
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -442,22 +435,22 @@ async def get_correlations(request: Request, dataset_id: str, threshold: float =
     """✅ Get Correlations - Correlation matrix from database"""
     try:
         logger.info(f"🔗 Correlations requested for dataset: {dataset_id} (threshold: {threshold})")
-        
+
         user_id = get_user_id_from_token(request)
-        
+
         result = db.query(EdaResult).filter(EdaResult.dataset_id == dataset_id).first()
-        
+
         if not result or not result.correlations:
             logger.warning(f"⚠️ Correlations not found for dataset: {dataset_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Correlations not found. Run analysis first using POST /dataset/{id}/analyze"
             )
-        
+
         correlations = json.loads(result.correlations)
         logger.info(f"✅ Correlations retrieved from database")
         return correlations
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -473,9 +466,9 @@ def load_dataset_for_phase2(dataset_id: str) -> pd.DataFrame:
     """Load dataset from cache or file for Phase 2 analysis"""
     from app.api.datasets import dataset_cache, UPLOAD_DIR
     import os
-    
+
     file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
-    
+
     if dataset_id in dataset_cache:
         return dataset_cache[dataset_id]
     elif os.path.exists(file_path):
@@ -492,24 +485,24 @@ def load_dataset_for_phase2(dataset_id: str) -> pd.DataFrame:
 
 @router.get("/{dataset_id}/phase2/histograms", status_code=status.HTTP_200_OK, tags=["Phase 2 - Statistics"])
 async def get_phase2_histograms(
-    request: Request,
-    dataset_id: str,
-    bins: int = 15,
-    db: Session = Depends(get_db)
+        request: Request,
+        dataset_id: str,
+        bins: int = 15,
+        db: Session = Depends(get_db)
 ):
     """✅ Phase 2: Get histogram data for visualization"""
     try:
         logger.info(f"📊 Phase 2 Histograms requested for dataset: {dataset_id}")
-        
+
         df = load_dataset_for_phase2(dataset_id)
         phase2 = Phase2StatisticsExtended(df)
         histogram_data = phase2.get_histograms(bins=bins)
         histogram_data["dataset_id"] = dataset_id
-        
+
         await cache_manager.set(f"phase2:histograms:{dataset_id}", safe_json_dumps(histogram_data), ttl=86400)
         logger.info(f"✅ Generated {histogram_data['successfully_generated']} histograms")
         return histogram_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -523,23 +516,23 @@ async def get_phase2_histograms(
 
 @router.get("/{dataset_id}/phase2/outliers", status_code=status.HTTP_200_OK, tags=["Phase 2 - Outliers"])
 async def get_phase2_outliers(
-    request: Request,
-    dataset_id: str,
-    db: Session = Depends(get_db)
+        request: Request,
+        dataset_id: str,
+        db: Session = Depends(get_db)
 ):
     """✅ Phase 2: Detect outliers using IQR method"""
     try:
         logger.info(f"🔍 Phase 2 Outliers requested for dataset: {dataset_id}")
-        
+
         df = load_dataset_for_phase2(dataset_id)
         phase2 = Phase2StatisticsExtended(df)
         outliers_data = phase2.get_outliers()
         outliers_data["dataset_id"] = dataset_id
-        
+
         await cache_manager.set(f"phase2:outliers:{dataset_id}", safe_json_dumps(outliers_data), ttl=86400)
         logger.info(f"✅ Outlier detection completed")
         return outliers_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -553,23 +546,23 @@ async def get_phase2_outliers(
 
 @router.get("/{dataset_id}/phase2/normality", status_code=status.HTTP_200_OK, tags=["Phase 2 - Tests"])
 async def get_phase2_normality(
-    request: Request,
-    dataset_id: str,
-    db: Session = Depends(get_db)
+        request: Request,
+        dataset_id: str,
+        db: Session = Depends(get_db)
 ):
     """✅ Phase 2: Test normality of numeric columns (Shapiro-Wilk)"""
     try:
         logger.info(f"📈 Phase 2 Normality tests requested for dataset: {dataset_id}")
-        
+
         df = load_dataset_for_phase2(dataset_id)
         phase2 = Phase2StatisticsExtended(df)
         normality_data = phase2.get_normality_tests()
         normality_data["dataset_id"] = dataset_id
-        
+
         await cache_manager.set(f"phase2:normality:{dataset_id}", safe_json_dumps(normality_data), ttl=86400)
         logger.info(f"✅ Normality tests completed")
         return normality_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -583,23 +576,23 @@ async def get_phase2_normality(
 
 @router.get("/{dataset_id}/phase2/distributions", status_code=status.HTTP_200_OK, tags=["Phase 2 - Analysis"])
 async def get_phase2_distributions(
-    request: Request,
-    dataset_id: str,
-    db: Session = Depends(get_db)
+        request: Request,
+        dataset_id: str,
+        db: Session = Depends(get_db)
 ):
     """✅ Phase 2: Analyze distribution characteristics"""
     try:
         logger.info(f"🎯 Phase 2 Distribution analysis requested for dataset: {dataset_id}")
-        
+
         df = load_dataset_for_phase2(dataset_id)
         phase2 = Phase2StatisticsExtended(df)
         distribution_data = phase2.get_distribution_analysis()
         distribution_data["dataset_id"] = dataset_id
-        
+
         await cache_manager.set(f"phase2:distributions:{dataset_id}", safe_json_dumps(distribution_data), ttl=86400)
         logger.info(f"✅ Distribution analysis completed")
         return distribution_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -613,24 +606,24 @@ async def get_phase2_distributions(
 
 @router.get("/{dataset_id}/phase2/categorical", status_code=status.HTTP_200_OK, tags=["Phase 2 - Categorical"])
 async def get_phase2_categorical(
-    request: Request,
-    dataset_id: str,
-    top_n: int = 10,
-    db: Session = Depends(get_db)
+        request: Request,
+        dataset_id: str,
+        top_n: int = 10,
+        db: Session = Depends(get_db)
 ):
     """✅ Phase 2: Get distribution of categorical columns"""
     try:
         logger.info(f"📋 Phase 2 Categorical distributions requested for dataset: {dataset_id}")
-        
+
         df = load_dataset_for_phase2(dataset_id)
         phase2 = Phase2StatisticsExtended(df)
         categorical_data = phase2.get_categorical_distributions(top_n=top_n)
         categorical_data["dataset_id"] = dataset_id
-        
+
         await cache_manager.set(f"phase2:categorical:{dataset_id}", safe_json_dumps(categorical_data), ttl=86400)
         logger.info(f"✅ Categorical analysis completed")
         return categorical_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -644,24 +637,24 @@ async def get_phase2_categorical(
 
 @router.get("/{dataset_id}/phase2/correlations-enhanced", status_code=status.HTTP_200_OK, tags=["Phase 2 - Correlations"])
 async def get_phase2_correlations_enhanced(
-    request: Request,
-    dataset_id: str,
-    threshold: float = 0.3,
-    db: Session = Depends(get_db)
+        request: Request,
+        dataset_id: str,
+        threshold: float = 0.3,
+        db: Session = Depends(get_db)
 ):
     """✅ Phase 2: Enhanced correlation analysis with p-values"""
     try:
         logger.info(f"🔗 Phase 2 Enhanced correlations requested for dataset: {dataset_id}")
-        
+
         df = load_dataset_for_phase2(dataset_id)
         phase2 = Phase2StatisticsExtended(df)
         correlation_data = phase2.get_enhanced_correlations(threshold=threshold)
         correlation_data["dataset_id"] = dataset_id
-        
+
         await cache_manager.set(f"phase2:correlations-enhanced:{dataset_id}", safe_json_dumps(correlation_data), ttl=86400)
         logger.info(f"✅ Enhanced correlation analysis completed")
         return correlation_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -675,17 +668,17 @@ async def get_phase2_correlations_enhanced(
 
 @router.get("/{dataset_id}/phase2/complete", status_code=status.HTTP_200_OK, tags=["Phase 2 - Complete"])
 async def get_phase2_complete(
-    request: Request,
-    dataset_id: str,
-    db: Session = Depends(get_db)
+        request: Request,
+        dataset_id: str,
+        db: Session = Depends(get_db)
 ):
     """✅ Phase 2: Get COMPLETE Phase 2 analysis (all features)"""
     try:
         logger.info(f"📊 Complete Phase 2 analysis requested for dataset: {dataset_id}")
-        
+
         df = load_dataset_for_phase2(dataset_id)
         phase2 = Phase2StatisticsExtended(df)
-        
+
         complete_data = {
             "dataset_id": dataset_id,
             "timestamp": datetime.utcnow().isoformat(),
@@ -697,11 +690,11 @@ async def get_phase2_complete(
             "categorical": phase2.get_categorical_distributions(),
             "correlations_enhanced": phase2.get_enhanced_correlations()
         }
-        
+
         await cache_manager.set(f"phase2:complete:{dataset_id}", safe_json_dumps(complete_data), ttl=86400)
         logger.info(f"✅ Complete Phase 2 analysis completed")
         return complete_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
