@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.cache import cache_manager
 from app.core.serializer_utils import safe_json_dumps
 from app.core.universal_eda_analyzer import UniversalEDAAnalyzer
+from app.core.phase2_statistics_extended import Phase2StatisticsExtended
 from app.models.models import EdaResult
 from app.schemas.eda_schemas import (
     AnalysisRequest, AnalysisResponse, JobStatusResponse, HealthResponse,
@@ -455,3 +456,246 @@ async def get_correlations(request: Request, dataset_id: str, threshold: float =
         logger.error(f"❌ Error fetching correlations: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get correlations: {str(e)}")
 
+
+# ============================================================================
+# PHASE 2: ADVANCED STATISTICS & VISUALIZATIONS
+# ============================================================================
+
+def load_dataset_for_phase2(dataset_id: str) -> pd.DataFrame:
+    """Load dataset from cache or file for Phase 2 analysis"""
+    from app.api.datasets import dataset_cache, UPLOAD_DIR
+    import os
+    
+    file_path = f"{UPLOAD_DIR}/{dataset_id}.csv"
+    
+    if dataset_id in dataset_cache:
+        return dataset_cache[dataset_id]
+    elif os.path.exists(file_path):
+        df = pd.read_csv(file_path)
+        dataset_cache[dataset_id] = df
+        return df
+    else:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+
+# ============================================================================
+# PHASE 2 ENDPOINT 1: HISTOGRAMS
+# ============================================================================
+
+@router.get("/{dataset_id}/phase2/histograms", status_code=status.HTTP_200_OK, tags=["Phase 2 - Statistics"])
+async def get_phase2_histograms(
+    request: Request,
+    dataset_id: str,
+    bins: int = 15,
+    db: Session = Depends(get_db)
+):
+    """✅ Phase 2: Get histogram data for visualization"""
+    try:
+        logger.info(f"📊 Phase 2 Histograms requested for dataset: {dataset_id}")
+        
+        df = load_dataset_for_phase2(dataset_id)
+        phase2 = Phase2StatisticsExtended(df)
+        histogram_data = phase2.get_histograms(bins=bins)
+        histogram_data["dataset_id"] = dataset_id
+        
+        await cache_manager.set(f"phase2:histograms:{dataset_id}", safe_json_dumps(histogram_data), ttl=86400)
+        logger.info(f"✅ Generated {histogram_data['successfully_generated']} histograms")
+        return histogram_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error generating histograms: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# PHASE 2 ENDPOINT 2: OUTLIERS
+# ============================================================================
+
+@router.get("/{dataset_id}/phase2/outliers", status_code=status.HTTP_200_OK, tags=["Phase 2 - Outliers"])
+async def get_phase2_outliers(
+    request: Request,
+    dataset_id: str,
+    db: Session = Depends(get_db)
+):
+    """✅ Phase 2: Detect outliers using IQR method"""
+    try:
+        logger.info(f"🔍 Phase 2 Outliers requested for dataset: {dataset_id}")
+        
+        df = load_dataset_for_phase2(dataset_id)
+        phase2 = Phase2StatisticsExtended(df)
+        outliers_data = phase2.get_outliers()
+        outliers_data["dataset_id"] = dataset_id
+        
+        await cache_manager.set(f"phase2:outliers:{dataset_id}", safe_json_dumps(outliers_data), ttl=86400)
+        logger.info(f"✅ Outlier detection completed")
+        return outliers_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error detecting outliers: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# PHASE 2 ENDPOINT 3: NORMALITY TESTS
+# ============================================================================
+
+@router.get("/{dataset_id}/phase2/normality", status_code=status.HTTP_200_OK, tags=["Phase 2 - Tests"])
+async def get_phase2_normality(
+    request: Request,
+    dataset_id: str,
+    db: Session = Depends(get_db)
+):
+    """✅ Phase 2: Test normality of numeric columns (Shapiro-Wilk)"""
+    try:
+        logger.info(f"📈 Phase 2 Normality tests requested for dataset: {dataset_id}")
+        
+        df = load_dataset_for_phase2(dataset_id)
+        phase2 = Phase2StatisticsExtended(df)
+        normality_data = phase2.get_normality_tests()
+        normality_data["dataset_id"] = dataset_id
+        
+        await cache_manager.set(f"phase2:normality:{dataset_id}", safe_json_dumps(normality_data), ttl=86400)
+        logger.info(f"✅ Normality tests completed")
+        return normality_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error running normality tests: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# PHASE 2 ENDPOINT 4: DISTRIBUTIONS
+# ============================================================================
+
+@router.get("/{dataset_id}/phase2/distributions", status_code=status.HTTP_200_OK, tags=["Phase 2 - Analysis"])
+async def get_phase2_distributions(
+    request: Request,
+    dataset_id: str,
+    db: Session = Depends(get_db)
+):
+    """✅ Phase 2: Analyze distribution characteristics"""
+    try:
+        logger.info(f"🎯 Phase 2 Distribution analysis requested for dataset: {dataset_id}")
+        
+        df = load_dataset_for_phase2(dataset_id)
+        phase2 = Phase2StatisticsExtended(df)
+        distribution_data = phase2.get_distribution_analysis()
+        distribution_data["dataset_id"] = dataset_id
+        
+        await cache_manager.set(f"phase2:distributions:{dataset_id}", safe_json_dumps(distribution_data), ttl=86400)
+        logger.info(f"✅ Distribution analysis completed")
+        return distribution_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error analyzing distributions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# PHASE 2 ENDPOINT 5: CATEGORICAL
+# ============================================================================
+
+@router.get("/{dataset_id}/phase2/categorical", status_code=status.HTTP_200_OK, tags=["Phase 2 - Categorical"])
+async def get_phase2_categorical(
+    request: Request,
+    dataset_id: str,
+    top_n: int = 10,
+    db: Session = Depends(get_db)
+):
+    """✅ Phase 2: Get distribution of categorical columns"""
+    try:
+        logger.info(f"📋 Phase 2 Categorical distributions requested for dataset: {dataset_id}")
+        
+        df = load_dataset_for_phase2(dataset_id)
+        phase2 = Phase2StatisticsExtended(df)
+        categorical_data = phase2.get_categorical_distributions(top_n=top_n)
+        categorical_data["dataset_id"] = dataset_id
+        
+        await cache_manager.set(f"phase2:categorical:{dataset_id}", safe_json_dumps(categorical_data), ttl=86400)
+        logger.info(f"✅ Categorical analysis completed")
+        return categorical_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error analyzing categorical data: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# PHASE 2 ENDPOINT 6: ENHANCED CORRELATIONS
+# ============================================================================
+
+@router.get("/{dataset_id}/phase2/correlations-enhanced", status_code=status.HTTP_200_OK, tags=["Phase 2 - Correlations"])
+async def get_phase2_correlations_enhanced(
+    request: Request,
+    dataset_id: str,
+    threshold: float = 0.3,
+    db: Session = Depends(get_db)
+):
+    """✅ Phase 2: Enhanced correlation analysis with p-values"""
+    try:
+        logger.info(f"🔗 Phase 2 Enhanced correlations requested for dataset: {dataset_id}")
+        
+        df = load_dataset_for_phase2(dataset_id)
+        phase2 = Phase2StatisticsExtended(df)
+        correlation_data = phase2.get_enhanced_correlations(threshold=threshold)
+        correlation_data["dataset_id"] = dataset_id
+        
+        await cache_manager.set(f"phase2:correlations-enhanced:{dataset_id}", safe_json_dumps(correlation_data), ttl=86400)
+        logger.info(f"✅ Enhanced correlation analysis completed")
+        return correlation_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error analyzing correlations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# PHASE 2 ENDPOINT 7: COMPLETE ANALYSIS
+# ============================================================================
+
+@router.get("/{dataset_id}/phase2/complete", status_code=status.HTTP_200_OK, tags=["Phase 2 - Complete"])
+async def get_phase2_complete(
+    request: Request,
+    dataset_id: str,
+    db: Session = Depends(get_db)
+):
+    """✅ Phase 2: Get COMPLETE Phase 2 analysis (all features)"""
+    try:
+        logger.info(f"📊 Complete Phase 2 analysis requested for dataset: {dataset_id}")
+        
+        df = load_dataset_for_phase2(dataset_id)
+        phase2 = Phase2StatisticsExtended(df)
+        
+        complete_data = {
+            "dataset_id": dataset_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "phase": 2,
+            "histograms": phase2.get_histograms(bins=15),
+            "outliers": phase2.get_outliers(),
+            "normality": phase2.get_normality_tests(),
+            "distributions": phase2.get_distribution_analysis(),
+            "categorical": phase2.get_categorical_distributions(),
+            "correlations_enhanced": phase2.get_enhanced_correlations()
+        }
+        
+        await cache_manager.set(f"phase2:complete:{dataset_id}", safe_json_dumps(complete_data), ttl=86400)
+        logger.info(f"✅ Complete Phase 2 analysis completed")
+        return complete_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error generating complete Phase 2 analysis: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
