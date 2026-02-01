@@ -1,6 +1,6 @@
 """
-Projects Routes - PHASE 1
-===========================
+Projects Routes - With Workspaces
+==================================
 Project CRUD operations
 
 ENDPOINTS:
@@ -9,15 +9,13 @@ ENDPOINTS:
 - GET    /api/projects/{project_id}                       Get project details
 - PUT    /api/projects/{project_id}                       Update project
 - DELETE /api/projects/{project_id}                       Delete project
-
-Also provides:
-- GET    /projects                                        List all user's projects
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from typing import List
 import logging
+import uuid
 
 from app.core.database import get_db
 from app.models.models import User, Workspace, Project
@@ -31,47 +29,34 @@ from app.core.auth import verify_token, extract_token_from_header
 
 logger = logging.getLogger(__name__)
 
-# Create router
 router = APIRouter()
 
 # ============================================================================
-# HELPER FUNCTION - Get current user from token
+# HELPER - Get current user
 # ============================================================================
 
 def get_current_user(
     authorization: str = Header(None),
     db: Session = Depends(get_db)
 ) -> User:
-    """
-    Extract and verify user from Authorization header
-    
-    Used as dependency in all protected routes
-    """
-    # Extract token
+    """Extract and verify user from Authorization header"""
     token = extract_token_from_header(authorization)
     
     if not token:
-        logger.warning("❌ Missing authorization header")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header"
         )
     
-    # Verify token
     user_id = verify_token(token)
-    
     if not user_id:
-        logger.warning("❌ Invalid token")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token"
         )
     
-    # Get user from database
     user = db.query(User).filter(User.id == user_id).first()
-    
     if not user:
-        logger.warning(f"❌ User not found: {user_id}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found"
@@ -81,293 +66,113 @@ def get_current_user(
 
 
 # ============================================================================
-# LIST ALL USER'S PROJECTS (across all workspaces)
+# LIST PROJECTS IN WORKSPACE
 # ============================================================================
 
-@router.get(
-    "",
-    response_model=List[ProjectResponse],
-    summary="List all user's projects",
-    description="Get all projects across all workspaces for current user"
-)
-def list_all_projects(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Get all projects belonging to the current user (across all workspaces)
-    
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Response (200 OK):**
-    ```json
-    [
-      {
-        "id": "550e8400-e29b-41d4-a716-446655440002",
-        "workspace_id": "550e8400-e29b-41d4-a716-446655440000",
-        "name": "Customer Churn Prediction",
-        "description": "Predict which customers will churn",
-        "problem_type": "Classification",
-        "status": "Active",
-        "created_at": "2024-01-31T11:00:00",
-        "updated_at": "2024-01-31T11:00:00"
-      }
-    ]
-    ```
-    
-    **Error Cases:**
-    - 401: Missing or invalid token
-    """
-    
-    logger.info(f"📋 Listing all projects for user: {current_user.email}")
-    
-    # Get all workspaces for this user
-    workspaces = db.query(Workspace).filter(
-        Workspace.owner_id == current_user.id,
-        Workspace.is_active == True
-    ).all()
-    
-    # Get all projects from these workspaces
-    workspace_ids = [ws.id for ws in workspaces]
-    projects = db.query(Project).filter(
-        Project.workspace_id.in_(workspace_ids)
-    ).all()
-    
-    logger.info(f"✅ Found {len(projects)} projects")
-    
-    return projects
-
-
-# ============================================================================
-# LIST WORKSPACE'S PROJECTS
-# ============================================================================
-
-@router.get(
-    "/workspaces/{workspace_id}",
-    response_model=List[ProjectResponse],
-    summary="List workspace's projects",
-    description="Get all projects in a specific workspace"
-)
-def list_workspace_projects(
+@router.get("/workspaces/{workspace_id}/projects", response_model=List[ProjectResponse])
+def list_projects_in_workspace(
     workspace_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Get all projects in a specific workspace
+    """List all projects in a workspace"""
+    logger.info(f"📋 Listing projects in workspace: {workspace_id}")
     
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - workspace_id: The UUID of the workspace
-    
-    **Response (200 OK):**
-    ```json
-    [
-      {
-        "id": "project-uuid",
-        "workspace_id": "workspace-uuid",
-        "name": "Project Name",
-        ...
-      }
-    ]
-    ```
-    
-    **Error Cases:**
-    - 401: Missing or invalid token
-    - 404: Workspace not found or doesn't belong to user
-    """
-    
-    logger.info(f"📋 Listing projects for workspace: {workspace_id}")
-    
-    # Verify workspace exists and belongs to user
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
         Workspace.owner_id == current_user.id
     ).first()
     
     if not workspace:
-        logger.warning(f"❌ Workspace not found: {workspace_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Workspace not found"
         )
     
-    # Get projects in this workspace
     projects = db.query(Project).filter(
-        Project.workspace_id == workspace_id
+        Project.workspace_id == workspace_id,
+        Project.is_active == True
     ).all()
     
-    logger.info(f"✅ Found {len(projects)} projects in workspace")
-    
+    logger.info(f"✅ Found {len(projects)} projects")
     return projects
 
 
 # ============================================================================
-# CREATE PROJECT
+# CREATE PROJECT IN WORKSPACE
 # ============================================================================
 
-@router.post(
-    "/workspaces/{workspace_id}",
-    response_model=ProjectResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create new project",
-    description="Create a new project in a workspace"
-)
-def create_project(
+@router.post("/workspaces/{workspace_id}/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+def create_project_in_workspace(
     workspace_id: str,
     project_data: ProjectCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Create a new project in a workspace
+    """Create a new project in a workspace"""
+    logger.info(f"➕ Creating project in workspace: {workspace_id}")
     
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - workspace_id: The UUID of the workspace
-    
-    **Request Body:**
-    ```json
-    {
-      "name": "Customer Churn Prediction",
-      "description": "Predict which customers will churn",
-      "problem_type": "Classification"
-    }
-    ```
-    
-    **Response (201 Created):**
-    ```json
-    {
-      "id": "project-uuid",
-      "workspace_id": "workspace-uuid",
-      "name": "Customer Churn Prediction",
-      "description": "Predict which customers will churn",
-      "problem_type": "Classification",
-      "status": "Active",
-      "created_at": "2024-01-31T11:10:00",
-      "updated_at": "2024-01-31T11:10:00"
-    }
-    ```
-    
-    **Error Cases:**
-    - 401: Missing or invalid token
-    - 404: Workspace not found
-    - 422: Validation error
-    """
-    
-    logger.info(f"🆕 Creating project in workspace: {workspace_id}")
-    
-    # Verify workspace exists and belongs to user
     workspace = db.query(Workspace).filter(
         Workspace.id == workspace_id,
         Workspace.owner_id == current_user.id
     ).first()
     
     if not workspace:
-        logger.warning(f"❌ Workspace not found: {workspace_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Workspace not found"
         )
     
-    # Create project
-    db_project = Project(
+    new_project = Project(
+        id=str(uuid.uuid4()),
         workspace_id=workspace_id,
         name=project_data.name,
-        description=project_data.description,
-        problem_type=project_data.problem_type,
-        status="Active"
+        description=project_data.description or None,
+        is_active=True
     )
     
-    # Save to database
-    db.add(db_project)
+    db.add(new_project)
     db.commit()
-    db.refresh(db_project)
+    db.refresh(new_project)
     
-    logger.info(f"✅ Project created: {project_data.name} (ID: {db_project.id})")
-    
-    return db_project
+    logger.info(f"✅ Project created: {new_project.id}")
+    return new_project
 
 
 # ============================================================================
 # GET PROJECT DETAILS
 # ============================================================================
 
-@router.get(
-    "/{project_id}",
-    response_model=ProjectResponse,
-    summary="Get project details",
-    description="Get detailed information about a specific project"
-)
+@router.get("/{project_id}", response_model=ProjectResponse)
 def get_project(
     project_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Get project details
-    
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - project_id: The UUID of the project
-    
-    **Response (200 OK):**
-    ```json
-    {
-      "id": "project-uuid",
-      "workspace_id": "workspace-uuid",
-      "name": "Customer Churn Prediction",
-      ...
-    }
-    ```
-    
-    **Error Cases:**
-    - 401: Missing or invalid token
-    - 404: Project not found or doesn't belong to user
-    """
-    
+    """Get project details"""
     logger.info(f"🔍 Getting project: {project_id}")
     
-    # Get project
     project = db.query(Project).filter(Project.id == project_id).first()
     
     if not project:
-        logger.warning(f"❌ Project not found: {project_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
     
-    # Verify user has access (check workspace owner)
+    # Verify user owns workspace
     workspace = db.query(Workspace).filter(
         Workspace.id == project.workspace_id,
         Workspace.owner_id == current_user.id
     ).first()
     
     if not workspace:
-        logger.warning(f"❌ User doesn't have access to project: {project_id}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this project"
         )
     
-    logger.info(f"✅ Found project: {project.name}")
-    
+    logger.info(f"✅ Project found: {project.name}")
     return project
 
 
@@ -375,92 +180,45 @@ def get_project(
 # UPDATE PROJECT
 # ============================================================================
 
-@router.put(
-    "/{project_id}",
-    response_model=ProjectResponse,
-    summary="Update project",
-    description="Update project details"
-)
+@router.put("/{project_id}", response_model=ProjectResponse)
 def update_project(
     project_id: str,
     project_data: ProjectUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Update project
+    """Update a project"""
+    logger.info(f"✏️ Updating project: {project_id}")
     
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - project_id: The UUID of the project
-    
-    **Request Body:**
-    ```json
-    {
-      "name": "Updated Project Name",
-      "description": "Updated description",
-      "status": "Active"
-    }
-    ```
-    
-    **Response (200 OK):**
-    ```json
-    {
-      "id": "project-uuid",
-      "workspace_id": "workspace-uuid",
-      "name": "Updated Project Name",
-      ...
-    }
-    ```
-    
-    **Error Cases:**
-    - 401: Missing or invalid token
-    - 404: Project not found
-    """
-    
-    logger.info(f"✏️  Updating project: {project_id}")
-    
-    # Get project
     project = db.query(Project).filter(Project.id == project_id).first()
     
     if not project:
-        logger.warning(f"❌ Project not found: {project_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
     
-    # Verify user has access
+    # Verify authorization
     workspace = db.query(Workspace).filter(
         Workspace.id == project.workspace_id,
         Workspace.owner_id == current_user.id
     ).first()
     
     if not workspace:
-        logger.warning(f"❌ User doesn't have access to project: {project_id}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized"
         )
     
-    # Update fields
     if project_data.name:
         project.name = project_data.name
     if project_data.description is not None:
         project.description = project_data.description
-    if project_data.status:
-        project.status = project_data.status
     
-    # Save changes
     db.commit()
     db.refresh(project)
     
     logger.info(f"✅ Project updated: {project.name}")
-    
     return project
 
 
@@ -468,101 +226,15 @@ def update_project(
 # DELETE PROJECT
 # ============================================================================
 
-@router.delete(
-    "/{project_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete project",
-    description="Delete a project"
-)
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(
     project_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Delete project
+    """Delete a project"""
+    logger.info(f"🗑️ Deleting project: {project_id}")
     
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - project_id: The UUID of the project
-    
-    **Response:**
-    - 204 No Content (successful deletion)
-    
-    **Error Cases:**
-    - 401: Missing or invalid token
-    - 404: Project not found
-    """
-    
-    logger.info(f"🗑️  Deleting project: {project_id}")
-    
-    # Get project
-    project = db.query(Project).filter(Project.id == project_id).first()
-    
-    if not project:
-        logger.warning(f"❌ Project not found: {project_id}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
-        )
-    
-    # Verify user has access
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
-        logger.warning(f"❌ User doesn't have access to project: {project_id}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
-        )
-    
-
-
-@router.get(
-    "/stats/{project_id}",
-    summary="Get project statistics",
-    description="Get statistics and metrics for a project"
-)
-def get_project_stats(
-    project_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Get project statistics
-    
-    **Headers:**
-    ```
-    Authorization: Bearer <access_token>
-    ```
-    
-    **Path Parameters:**
-    - project_id: The UUID of the project
-    
-    **Response (200 OK):**
-    ```json
-    {
-      "project_id": "project-uuid",
-      "models": 5,
-      "models_trained": 3,
-      "datasets": 2,
-      "avg_accuracy": 0.92,
-      "best_accuracy": 0.95,
-      "status": "Active"
-    }
-    ```
-    """
-    
-    logger.info(f"📊 Getting statistics for project: {project_id}")
-    
-    # Get project
     project = db.query(Project).filter(Project.id == project_id).first()
     
     if not project:
@@ -571,7 +243,7 @@ def get_project_stats(
             detail="Project not found"
         )
     
-    # Verify user has access
+    # Verify authorization
     workspace = db.query(Workspace).filter(
         Workspace.id == project.workspace_id,
         Workspace.owner_id == current_user.id
@@ -579,51 +251,12 @@ def get_project_stats(
     
     if not workspace:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized"
         )
     
-    # Get statistics
-    from app.models.models import Model, Dataset
+    db.delete(project)
+    db.commit()
     
-    # Count models
-    total_models = db.query(Model).filter(Model.project_id == project_id).count()
-    trained_models = db.query(Model).filter(
-        Model.project_id == project_id,
-        Model.status == "Trained"
-    ).count()
-    
-    # Count datasets
-    total_datasets = db.query(Dataset).filter(Dataset.project_id == project_id).count()
-    
-    # Get accuracy metrics
-    trained = db.query(Model).filter(
-        Model.project_id == project_id,
-        Model.status == "Trained",
-        Model.accuracy != None
-    ).all()
-    
-    avg_accuracy = 0.0
-    best_accuracy = 0.0
-    
-    if trained:
-        accuracies = [m.accuracy for m in trained if m.accuracy is not None]
-        if accuracies:
-            avg_accuracy = sum(accuracies) / len(accuracies)
-            best_accuracy = max(accuracies)
-    
-    stats = {
-        "project_id": project_id,
-        "project_name": project.name,
-        "models": total_models,
-        "models_trained": trained_models,
-        "datasets": total_datasets,
-        "avg_accuracy": round(avg_accuracy, 4),
-        "best_accuracy": round(best_accuracy, 4),
-        "status": project.status,
-        "created_at": project.created_at.isoformat() if project.created_at else None
-    }
-    
-    logger.info(f"✅ Statistics retrieved")
-    return stats
-
+    logger.info(f"✅ Project deleted: {project_id}")
+    return None

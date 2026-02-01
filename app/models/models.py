@@ -1,32 +1,16 @@
 """
-SQLAlchemy Models - Phase 3
+SQLAlchemy Models - Complete ML Platform
 All models use the SAME Base instance from database.py
-
-⚠️ CRITICAL RULE:
-   - Base MUST be imported from app.core.database
-   - Do NOT create your own Base instance
-   - Do NOT do: Base = declarative_base()
-   
-If you break this rule:
-   - Base.metadata will be empty
-   - No tables will be created
-   - Database will be created but empty
-   - Tests will fail at "Base.metadata has 0 tables"
-
-This is verified in:
-   - main.py (before table creation)
-   - verify_all.py (comprehensive test)
-   - VERIFY_INSTALLATION.md (test 3)
 """
 
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, Float, JSON, ForeignKey, LargeBinary, Table
 from sqlalchemy.orm import relationship
-from app.core.database import Base  # ✅ MUST import from database.py - NOT create own!
+from app.core.database import Base
 from datetime import datetime
 import uuid
 
 # ============================================================================
-# ASSOCIATION TABLE - Define FIRST
+# ASSOCIATION TABLE
 # ============================================================================
 
 model_datasets = Table(
@@ -98,8 +82,8 @@ class Project(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     workspace = relationship("Workspace", back_populates="projects", lazy="select")
-    datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan", lazy="select")
     datasources = relationship("Datasource", back_populates="project", cascade="all, delete-orphan", lazy="select")
+    datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan", lazy="select")
     models = relationship("Model", back_populates="project", cascade="all, delete-orphan", lazy="select")
     activities = relationship("Activity", back_populates="project", cascade="all, delete-orphan", lazy="select")
     
@@ -192,7 +176,7 @@ class Model(Base):
     project_id = Column(String(36), ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    model_type = Column(String(100), nullable=False)
+    model_type = Column(String(100), nullable=True)
     algorithm = Column(String(100), nullable=True)
     parameters = Column(JSON, nullable=True)
     model_path = Column(String(500), nullable=True)
@@ -234,4 +218,3 @@ class Activity(Base):
     
     def __repr__(self):
         return f"<Activity {self.action}>"
-

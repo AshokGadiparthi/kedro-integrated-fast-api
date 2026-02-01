@@ -105,7 +105,7 @@ def log_activity(
     
     logger.info(f"📝 Logging activity in project: {project_id}")
     
-    # Verify project exists and belongs to user
+    # Verify project exists
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(
@@ -113,7 +113,7 @@ def log_activity(
             detail="Project not found"
         )
     
-    # Verify user has access
+    # Verify user owns workspace
     workspace = db.query(Workspace).filter(
         Workspace.id == project.workspace_id,
         Workspace.owner_id == current_user.id
@@ -127,6 +127,8 @@ def log_activity(
     
     # Create activity
     db_activity = Activity(
+        user_id=current_user.id,
+        workspace_id=project.workspace_id,
         project_id=project_id,
         action=activity_data.action,
         target_type=activity_data.target_type,
@@ -177,15 +179,11 @@ def list_activities(
             detail="Project not found"
         )
     
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
+    # Verify user owns this project
+    if project.owner_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this project"
         )
     
     # Get activities
@@ -237,15 +235,11 @@ def get_recent_activities(
             detail="Project not found"
         )
     
-    workspace = db.query(Workspace).filter(
-        Workspace.id == project.workspace_id,
-        Workspace.owner_id == current_user.id
-    ).first()
-    
-    if not workspace:
+    # Verify user owns this project
+    if project.owner_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this project"
         )
     
     # Get recent activities
